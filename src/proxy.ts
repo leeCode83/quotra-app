@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "./middleware/auth";
+import { withX402 } from "./middleware/x402";
 
 // Re-export all middleware utilities so imports can migrate from "@/middleware" to "@/proxy"
 export {
@@ -27,12 +29,38 @@ export {
   type Middleware,
 } from "./middleware/chain";
 
-export const config = {
-  matcher: [
-    "/api/:path*",
-  ],
-};
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const { pathname } = request.nextUrl;
 
-export async function proxy(): Promise<NextResponse> {
+  // Public routes — no middleware needed
+  if (pathname === "/" || pathname.startsWith("/_next") || pathname.startsWith("/static") || pathname.startsWith("/favicon")) {
+    return NextResponse.next();
+  }
+
+  // Public API routes — auth endpoints (login, register, etc.)
+  if (pathname.startsWith("/api/auth")) {
+    return NextResponse.next();
+  }
+
+  // Payment routes need both JWT auth and x402 payment validation
+  // withX402 reads request.auth (set by withAuth) to identify the consumer
+  if (pathname.startsWith("/api/purchase") || pathname.startsWith("/api/payments")) {
+    const handler = withAuth(withX402(async () => NextResponse.next()));
+    return handler(request) as Promise<NextResponse>;
+  }
+
+  // All other API routes need JWT auth at minimum
+  if (pathname.startsWith("/api/")) {
+    const handler = withAuth(async () => NextResponse.next());
+    return handler(request) as Promise<NextResponse>;
+  }
+
+  // Catch-all: pass through unhandled routes
   return NextResponse.next();
 }
+
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico).*)",
+  ],
+};

@@ -3,7 +3,7 @@
  * @module web3/config
  */
 
-import { createConfig, cookieStorage, createStorage, http } from "wagmi";
+import { createConfig, cookieStorage, createStorage, http, type Config } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { baseSepolia } from "viem/chains";
 
@@ -27,15 +27,22 @@ if (!process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL) {
   );
 }
 
-export const config = createConfig({
-  chains: [baseSepolia],
-  connectors: [injected()],
-  transports: {
-    [baseSepolia.id]: http(rpcUrl),
-  },
-  ssr: true,
-  storage: createStorage({ storage: cookieStorage }),
-});
+let _config: Config | undefined;
+
+export function getConfig() {
+  if (!_config) {
+    _config = createConfig({
+      chains: [baseSepolia],
+      connectors: [injected()],
+      transports: {
+        [baseSepolia.id]: http(rpcUrl),
+      },
+      ssr: true,
+      storage: createStorage({ storage: cookieStorage }),
+    });
+  }
+  return _config;
+}
 
 export function getChainId(): typeof BASE_SEPOLIA_CHAIN_ID {
   return BASE_SEPOLIA_CHAIN_ID;

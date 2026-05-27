@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { cookieToInitialState } from "wagmi";
-import { config } from "@/lib/web3/config";
+import { getConfig } from "@/lib/web3/config";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { Navbar } from "@/components/Navbar";
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const initialState = cookieToInitialState(config, (await headers()).get("cookie"));
+  const initialState = cookieToInitialState(getConfig(), (await headers()).get("cookie"));
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen flex flex-col`}>

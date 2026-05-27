@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
+import { useQuery } from "@tanstack/react-query";
+import { createClient } from "@/lib/supabase-client";
 import { signJWT } from "@/lib/jwt";
 import type { ClaimHistory } from "@/types";
 
@@ -41,8 +43,45 @@ async function fetchClaimHistory(walletAddress: string): Promise<ClaimHistory[]>
   }
 }
 
+async function fetchTotalEarnings(walletAddress: string): Promise<number> {
+  const supabase = createClient();
+
+  const { data: provider } = await supabase
+    .from("providers")
+    .select("id")
+    .eq("wallet_address", walletAddress)
+    .maybeSingle();
+
+  if (!provider) return 0;
+
+  const { data: listings } = await supabase
+    .from("listings")
+    .select("id")
+    .eq("provider_id", provider.id);
+
+  if (!listings || listings.length === 0) return 0;
+
+  const listingIds = listings.map((l) => l.id);
+  const { data: transactions } = await supabase
+    .from("transactions")
+    .select("amount")
+    .eq("status", "confirmed")
+    .in("listing_id", listingIds);
+
+  if (!transactions) return 0;
+
+  const totalWei = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
+  return totalWei / 1e18;
+}
+
 export function useProviderClaim(): UseProviderClaimReturn {
   const { address, isConnected } = useAccount();
+
+  const { data: totalEarnings = 0 } = useQuery({
+    queryKey: ["totalEarnings", address],
+    queryFn: () => fetchTotalEarnings(address!),
+    enabled: !!address,
+  });
 
   const [claimableAmount, setClaimableAmount] = useState(0);
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>("idle");
@@ -103,10 +142,8 @@ export function useProviderClaim(): UseProviderClaimReturn {
           .filter((c) => c.status === "claimed")
           .reduce((sum, c) => sum + c.amount, 0);
 
-        // Mock total earnings calculation (in production, sum from transactions table)
-        // We'll estimate based on claim history + some buffer
-        const mockTotalEarnings = totalClaimed + Math.random() * 0.5;
-        const claimable = Math.max(0, mockTotalEarnings * 0.9 - totalClaimed);
+        // Real total earnings from confirmed transactions in Supabase
+        const claimable = Math.max(0, Number(totalEarnings) * 0.9 - totalClaimed);
         setClaimableAmount(Number(claimable.toFixed(6)));
       } else {
         setClaimableAmount(0);
@@ -118,7 +155,7 @@ export function useProviderClaim(): UseProviderClaimReturn {
       setError(message);
       setClaimStatus("error");
     }
-  }, [address]);
+  }, [address, totalEarnings]);
 
   const claim = useCallback(async () => {
     if (!isConnected || !address) {

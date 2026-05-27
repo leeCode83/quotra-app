@@ -30,8 +30,8 @@ describe("escrowAbi", () => {
     expect(Array.isArray(escrowAbi)).toBe(true);
   });
 
-  it("has 6 entries", () => {
-    expect(escrowAbi.length).toBe(6);
+  it("has 7 entries", () => {
+    expect(escrowAbi.length).toBe(7);
   });
 
   it("contains Deposit event", () => {

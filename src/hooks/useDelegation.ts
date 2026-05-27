@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { signJWT } from "@/lib/jwt";
+import { encrypt } from "@/lib/encryption";
 
 export type DelegationStatus =
   | "idle"
@@ -32,7 +33,7 @@ export interface DelegationData {
 }
 
 export interface UseDelegationReturn {
-  signDelegation: (providerName: string) => Promise<void>;
+  signDelegation: (providerName: string, apiKey: string) => Promise<void>;
   delegationStatus: DelegationStatus;
   delegationData: DelegationData | null;
   isSigning: boolean;
@@ -75,7 +76,7 @@ export function useDelegation(): UseDelegationReturn {
   const [error, setError] = useState<string | null>(null);
 
   const signDelegation = useCallback(
-    async (providerName: string) => {
+    async (providerName: string, apiKey: string) => {
       if (!isConnected || !address) {
         setError("Wallet not connected");
         setDelegationStatus("error");
@@ -117,6 +118,18 @@ export function useDelegation(): UseDelegationReturn {
           signature,
         };
 
+        const encoder = new TextEncoder();
+        const keyHash = await crypto.subtle.digest("SHA-256", encoder.encode(address));
+        const encryptionKey = await crypto.subtle.importKey(
+          "raw",
+          keyHash,
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["encrypt"]
+        );
+
+        const encrypted = await encrypt(apiKey, encryptionKey);
+
         setDelegationStatus("storing");
 
         const token = await signJWT({
@@ -133,7 +146,7 @@ export function useDelegation(): UseDelegationReturn {
           body: JSON.stringify({
             wallet_address: address,
             name: providerName,
-            encrypted_api_key: "mock_encrypted_key_for_provider",
+            encrypted_api_key: JSON.stringify(encrypted),
             delegation_json: fullDelegation as unknown as Record<string, unknown>,
           }),
         });

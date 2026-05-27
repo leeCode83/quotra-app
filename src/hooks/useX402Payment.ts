@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useAccount } from "wagmi";
-import { depositToEscrow } from "@/lib/web3/contracts";
-import { v4 as uuidv4 } from "uuid";
+import { useAccount, useWriteContract } from "wagmi";
+import { escrowAbi, ESCROW_ADDRESS } from "@/lib/web3/contracts";
 
 export type PaymentStatus =
   | "idle"
@@ -21,6 +20,15 @@ export interface PaymentState {
   isProcessing: boolean;
 }
 
+export interface X402VerificationResult {
+  verified: boolean;
+  receipt?: {
+    blockNumber: number;
+    gasUsed: string;
+  };
+  error?: string;
+}
+
 export interface UseX402PaymentReturn {
   initiatePayment: (amount: string, listingId: string) => Promise<void>;
   paymentStatus: PaymentStatus;
@@ -32,36 +40,53 @@ export interface UseX402PaymentReturn {
   reset: () => void;
 }
 
-async function mockX402FacilitatorVerify(
+const FACILITATOR_URL =
+  process.env.NEXT_PUBLIC_X402_FACILITATOR_URL ||
+  "https://x402.facilitator.coinbase.com";
+
+async function verifyWithFacilitator(
   txHash: `0x${string}`,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _amount: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _consumerAddress: `0x${string}`,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _listingId: string
-): Promise<{ verified: boolean; receipt?: { blockNumber: number; gasUsed: string } }> {
-  // Simulate network delay for facilitator verification
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  amount: string,
+  consumerAddress: `0x${string}`,
+  listingId: string
+): Promise<X402VerificationResult> {
+  try {
+    const response = await fetch(`${FACILITATOR_URL}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tx_hash: txHash,
+        amount,
+        consumer_address: consumerAddress,
+        listing_id: listingId,
+      }),
+    });
 
-  // Mock verification - in production this would call the x402 facilitator
-  const isValid = txHash.startsWith("0x") && txHash.length === 66;
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      return {
+        verified: false,
+        error: body.message ?? `Facilitator returned ${response.status}`,
+      };
+    }
 
-  if (!isValid) {
-    return { verified: false };
+    const data = await response.json();
+    return {
+      verified: true,
+      receipt: {
+        blockNumber: data.block_number,
+        gasUsed: data.gas_used,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Facilitator request failed";
+    return { verified: false, error: message };
   }
-
-  return {
-    verified: true,
-    receipt: {
-      blockNumber: Math.floor(Math.random() * 1000000) + 18000000,
-      gasUsed: "21000",
-    },
-  };
 }
 
 export function useX402Payment(): UseX402PaymentReturn {
   const { address, isConnected } = useAccount();
+  const { writeContractAsync } = useWriteContract();
 
   const [status, setStatus] = useState<PaymentStatus>("idle");
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
@@ -87,29 +112,33 @@ export function useX402Payment(): UseX402PaymentReturn {
         const paddedFraction = fraction.padEnd(18, "0").slice(0, 18);
         const amountBigInt = BigInt(`${whole}${paddedFraction}`);
 
-        // Step 1: Call escrow deposit
-        await depositToEscrow(address, amountBigInt);
+        // Step 1: Send escrow deposit transaction via wagmi
+        const hash = await writeContractAsync({
+          address: ESCROW_ADDRESS,
+          abi: escrowAbi,
+          functionName: "deposit",
+          args: [address, amountBigInt],
+          value: amountBigInt,
+        });
 
-        // Step 2: Generate unique tx hash (in production this comes from the blockchain)
-        const uniqueTxHash = `0x${uuidv4().replace(/-/g, "")}${uuidv4().replace(/-/g, "").slice(0, 30)}` as `0x${string}`;
-        setTxHash(uniqueTxHash);
+        setTxHash(hash);
 
-        // Step 3: Move to confirming state
+        // Step 2: Move to confirming state
         setStatus("confirming");
 
-        // Step 4: Verify via x402 facilitator mock
-        const verification = await mockX402FacilitatorVerify(
-          uniqueTxHash,
+        // Step 3: Verify via x402 facilitator
+        const verification = await verifyWithFacilitator(
+          hash,
           paymentAmount,
           address,
           targetListingId
         );
 
         if (!verification.verified) {
-          throw new Error("x402 facilitator verification failed");
+          throw new Error(verification.error ?? "x402 facilitator verification failed");
         }
 
-        // Step 5: Record transaction in backend
+        // Step 4: Record transaction in backend
         const token = localStorage.getItem("quotra_jwt");
         const response = await fetch("/api/transactions", {
           method: "POST",
@@ -119,7 +148,7 @@ export function useX402Payment(): UseX402PaymentReturn {
           },
           body: JSON.stringify({
             listing_id: targetListingId,
-            tx_hash: uniqueTxHash,
+            tx_hash: hash,
             amount: String(amountBigInt),
           }),
         });
@@ -135,7 +164,7 @@ export function useX402Payment(): UseX402PaymentReturn {
         setStatus("failed");
       }
     },
-    [address, isConnected]
+    [address, isConnected, writeContractAsync]
   );
 
   const reset = useCallback(() => {

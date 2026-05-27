@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { WagmiProvider, type State } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
-import { config } from "@/lib/web3/config";
+import { getConfig } from "@/lib/web3/config";
 
 export function Providers({ children, initialState }: { children: ReactNode; initialState?: State }) {
   const [queryClient] = useState(
@@ -21,7 +21,7 @@ export function Providers({ children, initialState }: { children: ReactNode; ini
   );
 
   return (
-    <WagmiProvider config={config} initialState={initialState}>
+    <WagmiProvider config={getConfig()} initialState={initialState}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { createClient } from "@/lib/supabase-client";
 import { baseSepolia } from "viem/chains";
 import { BASE_SEPOLIA_EXPLORER_URL } from "@/lib/web3/config";
 import {
@@ -36,32 +38,6 @@ interface TransactionItem {
   timestamp: string;
   txHash?: string;
 }
-
-const MOCK_TRANSACTIONS: TransactionItem[] = [
-  {
-    id: "tx_1",
-    type: "deposit",
-    amount: "0.0500",
-    status: "confirmed",
-    timestamp: new Date(Date.now() - 86400000).toISOString(),
-    txHash: "0xabc123def456789012345678901234567890123456789012345678901234abcd",
-  },
-  {
-    id: "tx_2",
-    type: "payment",
-    amount: "0.0020",
-    status: "confirmed",
-    timestamp: new Date(Date.now() - 43200000).toISOString(),
-    txHash: "0xdef456abc123789012345678901234567890123456789012345678901234efgh",
-  },
-  {
-    id: "tx_3",
-    type: "claim",
-    amount: "0.0100",
-    status: "pending",
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
 
 function TransactionRow({ tx }: { tx: TransactionItem }) {
   const typeColors: Record<string, string> = {
@@ -138,6 +114,26 @@ export default function WalletPage() {
 
   const [copied, setCopied] = useState(false);
   const [showTransactions, setShowTransactions] = useState(true);
+
+  const { data: transactions = [], isLoading, error } = useQuery<TransactionItem[]>({
+    queryKey: ["wallet-transactions"],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((tx) => ({
+        id: tx.id,
+        type: "payment" as const,
+        amount: (tx.amount / 1e18).toFixed(4),
+        status: tx.status === "refunded" ? "failed" as const : tx.status as "confirmed" | "pending" | "failed",
+        timestamp: tx.created_at,
+        txHash: tx.tx_hash,
+      }));
+    },
+  });
 
   const handleCopyAddress = async () => {
     if (!address) return;
@@ -334,14 +330,43 @@ export default function WalletPage() {
 
             {showTransactions && (
               <div className="mt-4 space-y-2">
-                {MOCK_TRANSACTIONS.length === 0 ? (
+                {isLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3 animate-pulse"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                          <div className="space-y-1">
+                            <div className="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded" />
+                            <div className="h-3 w-32 bg-zinc-200 dark:bg-zinc-700 rounded" />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="h-4 w-16 bg-zinc-200 dark:bg-zinc-700 rounded" />
+                          <div className="h-4 w-4 bg-zinc-200 dark:bg-zinc-700 rounded" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : error ? (
+                  <div className="text-center py-8">
+                    <AlertTriangle className="h-8 w-8 mx-auto text-red-500 mb-2" />
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      Failed to load transactions
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-1">{(error as Error).message}</p>
+                  </div>
+                ) : transactions.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">
                       No transactions yet
                     </p>
                   </div>
                 ) : (
-                  MOCK_TRANSACTIONS.map((tx) => <TransactionRow key={tx.id} tx={tx} />)
+                  transactions.map((tx) => <TransactionRow key={tx.id} tx={tx} />)
                 )}
               </div>
             )}

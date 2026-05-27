@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { verifyJWT } from "@/lib/jwt";
+import { withdrawFromEscrow } from "@/lib/web3/contracts";
 
 function getAuthToken(request: NextRequest): string | null {
   const authHeader = request.headers.get("authorization");
@@ -81,28 +82,48 @@ export async function POST(request: NextRequest) {
     );
 
     const claimable = Math.max(0, totalEarnings * 0.9 - totalClaimed);
-    const txHash = "mock_claim_" + Date.now();
 
-    if (claimable > 0) {
-      const { error: insertError } = await supabase
-        .from("claim_history")
-        .insert({
-          provider_id: provider.id,
-          amount: claimable,
-          tx_hash: txHash,
-          status: "claimed",
-          created_at: new Date().toISOString(),
-        });
+    if (claimable <= 0) {
+      return NextResponse.json({
+        claimable_amount: 0,
+        tx_hash: null,
+      });
+    }
 
-      if (insertError) {
-        return NextResponse.json(
-          {
-            error: "Failed to record claim",
-            details: insertError.message,
-          },
-          { status: 500 }
-        );
-      }
+    let txHash: `0x${string}`;
+    try {
+      txHash = await withdrawFromEscrow(
+        walletAddress as `0x${string}`,
+        claimable,
+      );
+    } catch (txErr) {
+      return NextResponse.json(
+        {
+          error: "On-chain withdrawal failed",
+          details: txErr instanceof Error ? txErr.message : "Unknown error",
+        },
+        { status: 502 },
+      );
+    }
+
+    const { error: insertError } = await supabase
+      .from("claim_history")
+      .insert({
+        provider_id: provider.id,
+        amount: claimable,
+        tx_hash: txHash,
+        status: "claimed",
+        created_at: new Date().toISOString(),
+      });
+
+    if (insertError) {
+      return NextResponse.json(
+        {
+          error: "Failed to record claim",
+          details: insertError.message,
+        },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
