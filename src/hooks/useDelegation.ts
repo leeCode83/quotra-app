@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { signJWT } from "@/lib/jwt";
-import { encrypt } from "@/lib/encryption";
+
 
 export type DelegationStatus =
   | "idle"
@@ -118,18 +118,6 @@ export function useDelegation(): UseDelegationReturn {
           signature,
         };
 
-        const encoder = new TextEncoder();
-        const keyHash = await crypto.subtle.digest("SHA-256", encoder.encode(address));
-        const encryptionKey = await crypto.subtle.importKey(
-          "raw",
-          keyHash,
-          { name: "AES-GCM", length: 256 },
-          false,
-          ["encrypt"]
-        );
-
-        const encrypted = await encrypt(apiKey, encryptionKey);
-
         setDelegationStatus("storing");
 
         const token = await signJWT({
@@ -146,7 +134,7 @@ export function useDelegation(): UseDelegationReturn {
           body: JSON.stringify({
             wallet_address: address,
             name: providerName,
-            encrypted_api_key: JSON.stringify(encrypted),
+            encrypted_api_key: apiKey,
             delegation_json: fullDelegation as unknown as Record<string, unknown>,
           }),
         });

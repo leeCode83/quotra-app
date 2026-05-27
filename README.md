@@ -61,7 +61,7 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`       | Yes      | Supabase anonymous key                           |
 | `SUPABASE_SERVICE_ROLE_KEY`           | For admin | Supabase service role key (escrow operations)    |
 | `JWT_SECRET`                          | Yes      | Secret for signing wallet-based JWTs             |
-| `VENICE_API_KEY`                      | Yes      | Venice.ai API key (AI gateway integration)       |
+| `QUOTRA_ENCRYPTION_KEY`               | Yes      | Base64 32-byte key for encrypting provider API keys |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`| Yes      | WalletConnect Cloud project ID                   |
 | `NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL`    | No       | Custom RPC URL for Base Sepolia (has default)    |
 | `X402_FACILITATOR_URL`                | No       | x402 facilitator URL (has default)               |

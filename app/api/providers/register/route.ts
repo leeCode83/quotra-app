@@ -31,14 +31,14 @@ async function getWalletAddress(request: NextRequest): Promise<string | null> {
 }
 
 async function getMasterKey(): Promise<CryptoKey> {
-  const envKey = process.env.SUPABASE_ENCRYPTION_MASTER_KEY;
+  const envKey = process.env.QUOTRA_ENCRYPTION_KEY;
   if (envKey) {
     return importKey(envKey);
   }
   const key = await generateEncryptionKey();
   const exported = await exportKey(key);
   console.warn(
-    `[providers/register] SUPABASE_ENCRYPTION_MASTER_KEY not set. Generated temporary key: ${exported}. Set this as SUPABASE_ENCRYPTION_MASTER_KEY env var to persist across restarts.`
+    `[providers/register] QUOTRA_ENCRYPTION_KEY not set. Generated temporary key: ${exported}. Set this as QUOTRA_ENCRYPTION_KEY env var to persist across restarts.`
   );
   return key;
 }
