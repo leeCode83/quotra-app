@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useAccount, useWriteContract } from "wagmi";
-import { escrowAbi, ESCROW_ADDRESS } from "@/lib/web3/contracts";
+import { useAccount } from "wagmi";
 
 export type PaymentStatus =
   | "idle"
@@ -13,26 +12,17 @@ export type PaymentStatus =
 
 export interface PaymentState {
   status: PaymentStatus;
-  txHash: `0x${string}` | null;
+  txHash: string | null;
   amount: string | null;
   listingId: string | null;
   error: string | null;
   isProcessing: boolean;
 }
 
-export interface X402VerificationResult {
-  verified: boolean;
-  receipt?: {
-    blockNumber: number;
-    gasUsed: string;
-  };
-  error?: string;
-}
-
 export interface UseX402PaymentReturn {
   initiatePayment: (amount: string, listingId: string) => Promise<void>;
   paymentStatus: PaymentStatus;
-  txHash: `0x${string}` | null;
+  txHash: string | null;
   amount: string | null;
   listingId: string | null;
   isProcessing: boolean;
@@ -40,56 +30,11 @@ export interface UseX402PaymentReturn {
   reset: () => void;
 }
 
-const FACILITATOR_URL =
-  process.env.NEXT_PUBLIC_X402_FACILITATOR_URL ||
-  "https://x402.facilitator.coinbase.com";
-
-async function verifyWithFacilitator(
-  txHash: `0x${string}`,
-  amount: string,
-  consumerAddress: `0x${string}`,
-  listingId: string
-): Promise<X402VerificationResult> {
-  try {
-    const response = await fetch(`${FACILITATOR_URL}/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tx_hash: txHash,
-        amount,
-        consumer_address: consumerAddress,
-        listing_id: listingId,
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      return {
-        verified: false,
-        error: body.message ?? `Facilitator returned ${response.status}`,
-      };
-    }
-
-    const data = await response.json();
-    return {
-      verified: true,
-      receipt: {
-        blockNumber: data.block_number,
-        gasUsed: data.gas_used,
-      },
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Facilitator request failed";
-    return { verified: false, error: message };
-  }
-}
-
 export function useX402Payment(): UseX402PaymentReturn {
   const { address, isConnected } = useAccount();
-  const { writeContractAsync } = useWriteContract();
 
   const [status, setStatus] = useState<PaymentStatus>("idle");
-  const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
   const [amount, setAmount] = useState<string | null>(null);
   const [listingId, setListingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,52 +54,54 @@ export function useX402Payment(): UseX402PaymentReturn {
 
       try {
         const [whole, fraction = ""] = paymentAmount.split(".");
-        const paddedFraction = fraction.padEnd(18, "0").slice(0, 18);
+        const paddedFraction = fraction.padEnd(6, "0").slice(0, 6);
         const amountBigInt = BigInt(`${whole}${paddedFraction}`);
+        const amountStr = amountBigInt.toString();
 
-        // Step 1: Send escrow deposit transaction via wagmi
-        const hash = await writeContractAsync({
-          address: ESCROW_ADDRESS,
-          abi: escrowAbi,
-          functionName: "deposit",
-          args: [address, amountBigInt],
-          value: amountBigInt,
-        });
-
-        setTxHash(hash);
-
-        // Step 2: Move to confirming state
         setStatus("confirming");
 
-        // Step 3: Verify via x402 facilitator
-        const verification = await verifyWithFacilitator(
-          hash,
-          paymentAmount,
-          address,
-          targetListingId
-        );
-
-        if (!verification.verified) {
-          throw new Error(verification.error ?? "x402 facilitator verification failed");
-        }
-
-        // Step 4: Record transaction in backend
         const token = localStorage.getItem("quotra_jwt");
-        const response = await fetch("/api/transactions", {
+        const response = await fetch("/api/gateway/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            "x-listing-id": targetListingId,
+            "x-amount": amountStr,
+            "x-delegation-id": targetListingId,
           },
           body: JSON.stringify({
-            listing_id: targetListingId,
-            tx_hash: hash,
-            amount: String(amountBigInt),
+            model: "default",
+            messages: [{ role: "user", content: "payment verification" }],
           }),
         });
 
-        if (!response.ok && response.status !== 404) {
-          console.warn("[useX402Payment] Transaction API returned:", response.status);
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error ?? `Gateway returned ${response.status}`);
+        }
+
+        const txHashHeader = response.headers.get("x-transaction-hash");
+        setTxHash(txHashHeader);
+
+        const tokenResponse = localStorage.getItem("quotra_jwt");
+        if (tokenResponse) {
+          const recordResponse = await fetch("/api/transactions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${tokenResponse}`,
+            },
+            body: JSON.stringify({
+              listing_id: targetListingId,
+              tx_hash: txHashHeader || "pending",
+              amount: amountStr,
+            }),
+          });
+
+          if (!recordResponse.ok && recordResponse.status !== 404) {
+            console.warn("[useX402Payment] Transaction API returned:", recordResponse.status);
+          }
         }
 
         setStatus("confirmed");
@@ -164,7 +111,7 @@ export function useX402Payment(): UseX402PaymentReturn {
         setStatus("failed");
       }
     },
-    [address, isConnected, writeContractAsync]
+    [address, isConnected]
   );
 
   const reset = useCallback(() => {

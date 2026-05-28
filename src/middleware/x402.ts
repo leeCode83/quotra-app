@@ -125,8 +125,8 @@ export function withX402<T = PaymentContext>(
 
     const { data: existingTx } = await supabase
       .from("transactions")
-      .select("id, tx_hash")
-      .eq("tx_hash", validatedPayment.tx_hash)
+      .select("id, payment_tx_hash")
+      .eq("payment_tx_hash", validatedPayment.tx_hash)
       .single();
 
     if (existingTx) {
@@ -161,15 +161,21 @@ export function withX402<T = PaymentContext>(
       );
     }
 
+    // Split amount: 90% provider, 10% platform
+    const providerAmount = (validatedPayment.amount * 90n) / 100n;
+    const platformAmount = validatedPayment.amount - providerAmount;
+
     // Insert the new transaction atomically
-    // The uniqueness constraint on tx_hash at the database level acts as a safety net
+    // The uniqueness constraint on payment_tx_hash at the database level acts as a safety net
     const { error: insertError } = await supabase
       .from("transactions")
       .insert({
         listing_id: validatedPayment.listing_id,
         consumer_id: consumerId,
-        tx_hash: validatedPayment.tx_hash,
-        amount: String(validatedPayment.amount),
+        payment_tx_hash: validatedPayment.tx_hash,
+        amount_usdc: validatedPayment.amount.toString(),
+        provider_amount_usdc: providerAmount.toString(),
+        platform_amount_usdc: platformAmount.toString(),
         status: "pending",
       });
 

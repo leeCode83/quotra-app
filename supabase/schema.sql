@@ -115,7 +115,8 @@ CREATE TABLE transactions (
   prompt_tokens         INTEGER,
   completion_tokens     INTEGER,
   created_at            TIMESTAMPTZ DEFAULT now(),
-  completed_at          TIMESTAMPTZ
+  completed_at          TIMESTAMPTZ,
+  updated_at            TIMESTAMPTZ DEFAULT now()
 );
 
 COMMENT ON TABLE transactions IS 'Payment transaction records';
@@ -134,7 +135,8 @@ CREATE TABLE claim_history (
   amount_usdc     NUMERIC(18, 8) NOT NULL,
   tx_hash         TEXT,
   status          TEXT NOT NULL DEFAULT 'pending',
-  created_at      TIMESTAMPTZ DEFAULT now()
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
 COMMENT ON TABLE claim_history IS 'Provider claim/withdrawal history';

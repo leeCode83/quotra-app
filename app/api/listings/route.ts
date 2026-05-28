@@ -2,18 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { verifyJWT } from "@/lib/jwt";
 import { listingSchema } from "@/lib/validators";
-
-interface ListingRow {
-  id: string;
-  name: string;
-  description: string | null;
-  model_type: string;
-  price_per_request: number;
-  endpoint_url: string;
-  is_active: boolean;
-  created_at: string;
-  providers: { name: string | null; wallet_address: string | null }[] | null;
-}
+import { executeAsDelegator } from "@/lib/oneshot";
 
 function getAuthToken(request: NextRequest): string | null {
   const authHeader = request.headers.get("authorization");
@@ -42,9 +31,10 @@ export async function GET() {
     const { data: listings, error } = await supabase
       .from("listings")
       .select(
-        "id, name, description, model_type, price_per_request, endpoint_url, is_active, created_at, providers ( name, wallet_address )"
+        "id, name, description, model_name, price_per_call_usdc, max_calls, remaining_calls, max_input_chars, max_completion_tokens, status, expires_at, created_at, providers ( name, wallet_address )"
       )
-      .eq("is_active", true)
+      .eq("status", "active")
+      .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -54,15 +44,20 @@ export async function GET() {
       );
     }
 
-    const formatted = (listings ?? []).map((item: ListingRow) => ({
+    const formatted = (listings ?? []).map((item: Record<string, unknown>) => ({
       id: item.id,
       name: item.name,
       description: item.description,
-      model_type: item.model_type,
-      price_per_request: item.price_per_request,
-      provider_name: item.providers?.[0]?.name ?? null,
-      provider_wallet: item.providers?.[0]?.wallet_address ?? null,
+      model_name: item.model_name,
+      price_per_call_usdc: item.price_per_call_usdc,
+      max_calls: item.max_calls,
+      remaining_calls: item.remaining_calls,
+      max_input_chars: item.max_input_chars,
+      max_completion_tokens: item.max_completion_tokens,
+      provider_name: (item.providers as Array<Record<string, unknown>>)?.[0]?.name ?? null,
+      provider_wallet: (item.providers as Array<Record<string, unknown>>)?.[0]?.wallet_address ?? null,
       created_at: item.created_at,
+      expires_at: item.expires_at,
     }));
 
     return NextResponse.json({ success: true, listings: formatted });
@@ -117,17 +112,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const data = parseResult.data;
+
     const { data: listing, error } = await supabase
       .from("listings")
       .insert({
         provider_id: provider.id,
-        name: parseResult.data.name,
-        description: parseResult.data.description,
-        model_type: parseResult.data.model_type,
-        price_per_request: String(parseResult.data.price_per_request),
-        endpoint_url: parseResult.data.endpoint_url,
-        is_active: true,
-        created_at: new Date().toISOString(),
+        name: data.name,
+        description: data.description,
+        model_name: data.model_name,
+        price_per_call_usdc: data.price_per_call_usdc,
+        max_calls: data.max_calls,
+        remaining_calls: data.max_calls,
+        max_input_chars: data.max_input_chars,
+        max_completion_tokens: data.max_completion_tokens,
+        expires_at: data.expires_at,
+        delegation_id: data.delegation_id,
+        signed_delegation: data.signed_delegation,
+        encrypted_key: data.encrypted_key,
+        key_iv: data.key_iv,
+        key_auth_tag: data.key_auth_tag,
+        status: "active",
       })
       .select()
       .single();
@@ -138,6 +143,18 @@ export async function POST(request: NextRequest) {
         { error: "Failed to create listing", details: error?.message },
         { status: 500 }
       );
+    }
+
+    // Submit delegation to 1Shot (non-blocking)
+    const usdcMethodId = process.env.ONE_SHOT_API_USDC_CONTRACT_METHOD_ID;
+    if (usdcMethodId) {
+      executeAsDelegator(
+        usdcMethodId,
+        data.delegation_id,
+        { listing_id: listing.id, max_calls: data.max_calls }
+      ).catch((err: unknown) => {
+        console.warn("[listings] Delegation submission failed (non-blocking):", err);
+      });
     }
 
     return NextResponse.json(

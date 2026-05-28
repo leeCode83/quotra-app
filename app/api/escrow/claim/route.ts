@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { verifyJWT } from "@/lib/jwt";
-import { withdrawFromEscrow } from "@/lib/web3/contracts";
+import { executeMethod } from "@/lib/oneshot";
 
 function getAuthToken(request: NextRequest): string | null {
   const authHeader = request.headers.get("authorization");
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     const { data: provider, error: providerError } = await supabase
       .from("providers")
-      .select("id")
+      .select("id, wallet_address")
       .eq("wallet_address", walletAddress)
       .single();
 
@@ -60,24 +60,24 @@ export async function POST(request: NextRequest) {
     if (listingIds.length > 0) {
       const { data: transactions } = await supabase
         .from("transactions")
-        .select("amount")
+        .select("amount_usdc")
         .in("listing_id", listingIds)
-        .eq("status", "confirmed");
+        .eq("status", "completed");
 
       totalEarnings = (transactions ?? []).reduce(
-        (sum, tx) => sum + (tx.amount ?? 0),
+        (sum, tx) => sum + parseFloat(tx.amount_usdc ?? "0"),
         0
       );
     }
 
     const { data: claims } = await supabase
       .from("claim_history")
-      .select("amount")
+      .select("amount_usdc")
       .eq("provider_id", provider.id)
-      .eq("status", "claimed");
+      .eq("status", "completed");
 
     const totalClaimed = (claims ?? []).reduce(
-      (sum, c) => sum + (c.amount ?? 0),
+      (sum, c) => sum + parseFloat(c.amount_usdc ?? "0"),
       0
     );
 
@@ -90,19 +90,30 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    let txHash: `0x${string}`;
-    try {
-      txHash = await withdrawFromEscrow(
-        walletAddress as `0x${string}`,
-        claimable,
+    const usdcMethodId = process.env.ONE_SHOT_API_USDC_CONTRACT_METHOD_ID;
+    if (!usdcMethodId) {
+      return NextResponse.json(
+        { error: "USDC transfer method not configured" },
+        { status: 500 }
       );
+    }
+
+    const usdcDecimals = 6;
+    const amountInUSDC = BigInt(Math.floor(claimable * 10 ** usdcDecimals));
+
+    let result: { tx_hash: string; status: string };
+    try {
+      result = await executeMethod(usdcMethodId, {
+        to: provider.wallet_address,
+        value: amountInUSDC.toString(),
+      });
     } catch (txErr) {
       return NextResponse.json(
         {
-          error: "On-chain withdrawal failed",
+          error: "USDC transfer failed",
           details: txErr instanceof Error ? txErr.message : "Unknown error",
         },
-        { status: 502 },
+        { status: 502 }
       );
     }
 
@@ -110,10 +121,9 @@ export async function POST(request: NextRequest) {
       .from("claim_history")
       .insert({
         provider_id: provider.id,
-        amount: claimable,
-        tx_hash: txHash,
-        status: "claimed",
-        created_at: new Date().toISOString(),
+        amount_usdc: String(claimable),
+        tx_hash: result.tx_hash,
+        status: "pending",
       });
 
     if (insertError) {
@@ -122,13 +132,14 @@ export async function POST(request: NextRequest) {
           error: "Failed to record claim",
           details: insertError.message,
         },
-        { status: 500 },
+        { status: 500 }
       );
     }
 
     return NextResponse.json({
       claimable_amount: claimable,
-      tx_hash: txHash,
+      tx_hash: result.tx_hash,
+      status: result.status,
     });
   } catch (err) {
     return NextResponse.json(

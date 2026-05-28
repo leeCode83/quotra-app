@@ -5,7 +5,6 @@ import { createWalletClient, custom, type Address, parseUnits } from "viem"
 import { baseSepolia } from "viem/chains"
 import { erc7715ProviderActions } from "@metamask/smart-accounts-kit/actions"
 import { Button } from "@/components/ui/button"
-import { createClient } from "@/lib/supabase-client"
 
 declare global {
   interface Window {
@@ -28,7 +27,6 @@ export function GrantPermissionButton({
 }: GrantPermissionButtonProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
 
   const handleGrantPermission = async () => {
     setIsLoading(true)
@@ -64,16 +62,24 @@ export function GrantPermissionButton({
         },
       ])
 
-      const { error: dbError } = await supabase
-        .from("consumer_permissions")
-        .insert({
+      const token = localStorage.getItem("quotra_jwt");
+      const res = await fetch("/api/permissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
           listing_id: listingId,
-          consumer_address: sessionAccountAddress,
-          permissions: grantedPermissions,
           erc7715_proof: JSON.stringify(grantedPermissions),
-        })
+          expires_at: new Date(expiry * 1000).toISOString(),
+        }),
+      });
 
-      if (dbError) throw dbError
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `API returned ${res.status}`);
+      }
 
       onSuccess?.()
     } catch (err) {

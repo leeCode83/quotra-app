@@ -67,7 +67,7 @@ export async function GET(
     const { data: listing, error } = await supabase
       .from("listings")
       .select(
-        "id, name, description, model_type, price_per_request, endpoint_url, is_active, created_at, providers ( id, name, wallet_address, created_at )"
+        "id, name, description, model_name, price_per_call_usdc, max_calls, remaining_calls, max_input_chars, max_completion_tokens, status, expires_at, created_at, providers ( id, name, wallet_address, created_at )"
       )
       .eq("id", id)
       .single();
@@ -138,12 +138,20 @@ export async function PATCH(
       updateData.name = parseResult.data.name;
     if (parseResult.data.description !== undefined)
       updateData.description = parseResult.data.description;
-    if (parseResult.data.model_type !== undefined)
-      updateData.model_type = parseResult.data.model_type;
-    if (parseResult.data.price_per_request !== undefined)
-      updateData.price_per_request = String(parseResult.data.price_per_request);
-    if (parseResult.data.endpoint_url !== undefined)
-      updateData.endpoint_url = parseResult.data.endpoint_url;
+    if (parseResult.data.model_name !== undefined)
+      updateData.model_name = parseResult.data.model_name;
+    if (parseResult.data.price_per_call_usdc !== undefined)
+      updateData.price_per_call_usdc = parseResult.data.price_per_call_usdc;
+    if (parseResult.data.max_calls !== undefined) {
+      updateData.max_calls = parseResult.data.max_calls;
+      updateData.remaining_calls = parseResult.data.max_calls;
+    }
+    if (parseResult.data.max_input_chars !== undefined)
+      updateData.max_input_chars = parseResult.data.max_input_chars;
+    if (parseResult.data.max_completion_tokens !== undefined)
+      updateData.max_completion_tokens = parseResult.data.max_completion_tokens;
+    if (parseResult.data.expires_at !== undefined)
+      updateData.expires_at = parseResult.data.expires_at;
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
@@ -206,7 +214,7 @@ export async function DELETE(
 
     const { error } = await supabase
       .from("listings")
-      .update({ is_active: false })
+      .update({ status: "revoked" })
       .eq("id", id);
 
     if (error) {
