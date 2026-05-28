@@ -257,7 +257,7 @@ PER-CALL:
 9. Public endpoint auto-generated: `POST /api/v1/[delegationId]/chat`
 10. Listing appears in marketplace
 
-### 9.3 On-Chain vs Off-Chain Responsibility
+### 9.3 On-Chain vs Off-Chain Responsibility ✅
 
 This is critical for understanding what blockchain actually secures in Quotra.
 
@@ -443,7 +443,7 @@ Step 10b: Venice AI FAILURE
 
 > **Note:** For hackathon MVP, revocation is off-chain (Supabase soft delete). This is sufficient because gateway always checks Supabase before processing. On-chain revocation via ERC-7710 is deferred to post-hackathon.
 
-### 9.9 Multi-Key Provider Support
+### 9.9 Multi-Key Provider Support ✅
 - One provider wallet can create multiple listings
 - Each listing = one Venice AI key + one delegation + independent settings
 - Each listing has independently configurable: model, price, max calls, max input chars, max completion tokens, expiry
@@ -581,27 +581,29 @@ Consumer (app/code)
 
 | Technology | Role | Notes |
 |-----------|------|-------|
-| **Next.js 14** (App Router) | Frontend + API Gateway | Single repo, TypeScript, Vercel deployment |
-| **TypeScript** | All codebase | Strict mode |
-| **Tailwind CSS** | Styling | Utility-first |
-| **shadcn/ui** | UI Components | Accessible, composable |
+| **Next.js 14** (App Router) | Frontend + API Gateway | Single repo, TypeScript, Vercel deployment ✅ |
+| **TypeScript** | All codebase | Strict mode ✅ |
+| **Tailwind CSS** | Styling | Utility-first ✅ |
+| **shadcn/ui** | UI Components | Accessible, composable ✅ |
 | **MetaMask Smart Accounts Kit** (`@metamask/delegation-toolkit`) | ERC-7710 delegation + ERC-7715 permission | Core hackathon requirement |
-| **Viem** | Contract reads/writes, EIP-712 signing, chain interaction | TypeScript-native |
-| **Wagmi** | React hooks for wallet state | Built on Viem |
+| **Viem** | Contract reads/writes, EIP-712 signing, chain interaction | TypeScript-native ✅ |
+| **Wagmi** | React hooks for wallet state | Built on Viem ✅ |
 | **ERC-7710** | On-chain delegation (authorization layer) | Provider signs once; gateway redeems |
 | **ERC-7715** | Consumer session permission grant | One-time per listing per consumer |
 | **x402 Protocol** (`x402-next`) | HTTP-native per-call USDC payment | Intercept in Next.js API Route |
 | **Coinbase x402 Facilitator** (`@coinbase/x402`) | Payment verify + settle | `POST /v2/x402/verify` called in gateway |
-| **1Shot API** | ETH-free tx relay | Provider delegation + consumer payments + provider claim |
-| **Venice AI API** | LLM model provider | Text only, OpenAI-compatible API format |
-| **Supabase** | PostgreSQL database | RLS enabled, all quota tracking |
-| **Vercel** | Deployment | Edge + Node.js runtime separation |
-| **Base Sepolia** | Blockchain network | chainId: 84532 |
-| **USDC** | Payment token | Base Sepolia USDC |
+| **1Shot API** | ETH-free tx relay | Provider delegation + consumer payments + provider claim ✅ |
+| **Venice AI API** | LLM model provider | Text only, OpenAI-compatible API format ✅ |
+| **Supabase** | PostgreSQL database | RLS enabled, all quota tracking ✅ |
+| **Vercel** | Deployment | Edge + Node.js runtime separation ✅ |
+| **Base Sepolia** | Blockchain network | chainId: 84532 ✅ |
+| **USDC** | Payment token | Base Sepolia USDC ✅ |
 
 ---
 
 ## 13. Database Schema
+
+> ✅ All 6 table definitions implemented exactly as specified below (schema.sql).
 
 ### Table: `providers`
 ```sql
@@ -965,15 +967,15 @@ Errors:
 ## 15. Blockchain & Smart Contract Spec
 
 ### Network
-- **Network:** Base Sepolia Testnet
-- **Chain ID:** 84532
+- **Network:** Base Sepolia Testnet ✅
+- **Chain ID:** 84532 ✅
 - **RPC:** `https://sepolia.base.org`
 
 ### Tokens
-- **USDC (Base Sepolia):** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+- **USDC (Base Sepolia):** `0x036CbD53842c5426634e7929541eC2318f3dCF7e` ✅
 
 ### MetaMask Smart Accounts Kit Usage
-- Use `@metamask/delegation-toolkit` — do NOT deploy custom ERC-7710 contracts
+- Use `@metamask/delegation-toolkit` — do NOT deploy custom ERC-7710 contracts ✅
 - Use existing Delegation Framework contracts deployed on Base Sepolia by MetaMask
 - `toMetaMaskSmartAccount()` creates Smart Account for both provider and consumer
 
@@ -1040,7 +1042,7 @@ const permissions = await walletClient.request({
 ```
 
 ### 1Shot API Integration
-All on-chain transactions are submitted via 1Shot Relayer — neither provider nor consumer needs ETH.
+All on-chain transactions are submitted via 1Shot Relayer — neither provider nor consumer needs ETH. ✅
 
 | Action | Who | Gas Payer |
 |--------|-----|-----------|
@@ -1075,7 +1077,7 @@ if (!verifyResult.isValid) {
 ## 16. Payment & Settlement Model
 
 ### Overview
-Quotra uses an **escrow treasury model**. All consumer payments flow to Quotra treasury first. Provider earnings accumulate in database. Provider claims earnings manually.
+Quotra uses an **escrow treasury model**. All consumer payments flow to Quotra treasury first. Provider earnings accumulate in database. Provider claims earnings manually. ✅
 
 ```
 Consumer pays $0.001 USDC
@@ -1113,7 +1115,7 @@ Provider claims:
 - Gas for claim sponsored by 1Shot
 - Claim is atomic: reads pending amount → executes transfer → resets to 0
 
-### Revenue Split Summary
+### Revenue Split Summary ✅
 | Recipient | Amount | Timing |
 |-----------|--------|--------|
 | Quotra treasury (10%) | $0.0001 per $0.001 call | Immediate (x402 settle) |
@@ -1123,7 +1125,7 @@ Provider claims:
 
 ## 17. Security Spec
 
-### API Key Encryption
+### API Key Encryption ✅
 ```
 Algorithm:   AES-256-GCM
 Key source:  ENCRYPTION_KEY environment variable (Vercel) — never in DB
@@ -1160,7 +1162,7 @@ Payload:
 Validation order: signature → expiry → permissionId active in DB → wallet match
 ```
 
-### Replay Attack Prevention
+### Replay Attack Prevention ✅
 ```
 Every processed payment has its tx_hash stored in transactions table.
 UNIQUE CONSTRAINT on transactions.payment_tx_hash.
@@ -1174,7 +1176,7 @@ Flow:
 This guarantees one payment proof = one API call. No reuse possible.
 ```
 
-### Input Validation Rules
+### Input Validation Rules ✅
 | Field | Rule |
 |-------|------|
 | `pricePerCallUsdc` | numeric, min 0.0001, max 1.00 |
