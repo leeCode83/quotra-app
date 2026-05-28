@@ -31,6 +31,8 @@ export const providerRegistrationSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters long."),
   encrypted_api_key: z.string().min(1, "Encrypted API key is required."),
   delegation_json: z.record(z.string(), z.unknown()).optional(),
+  signed_delegation: z.string().optional(),
+  delegation_id: z.string().optional(),
 });
 
 /**

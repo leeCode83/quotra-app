@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAccount } from "wagmi";
 import { Search, Filter, Grid3X3, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,8 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ListingCard } from "@/components/ListingCard";
+import { GrantPermissionButton } from "@/components/GrantPermissionButton";
 import { cn, formatPrice } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-client";
+import type { Address } from "viem";
 import type { ListingWithProvider } from "@/types";
 
 const MODEL_TYPES = ["all", "text-generation", "image-generation", "embedding", "speech", "multimodal"] as const;
@@ -22,6 +25,8 @@ export default function MarketplacePage() {
   const [sortBy, setSortBy] = useState<string>("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
+  const { address, isConnected } = useAccount();
+
   const { data: listings = [], isLoading, error } = useQuery<ListingWithProvider[]>({
     queryKey: ["marketplace-listings"],
     queryFn: async () => {
@@ -31,6 +36,25 @@ export default function MarketplacePage() {
       return data as ListingWithProvider[];
     },
   });
+
+  const { data: grantedPermissions = [] } = useQuery<{ listing_id: string }[]>({
+    queryKey: ["consumer-permissions", address],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("consumer_permissions")
+        .select("listing_id")
+        .eq("consumer_address", address);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!address,
+  });
+
+  const grantedListingIds = useMemo(
+    () => new Set(grantedPermissions.map((p) => p.listing_id)),
+    [grantedPermissions]
+  );
 
   const filteredListings = useMemo(() => {
     let result = [...listings];
@@ -171,7 +195,16 @@ export default function MarketplacePage() {
         )}>
           {filteredListings.map((listing) =>
             viewMode === "grid" ? (
-              <ListingCard key={listing.id} listing={listing} />
+              <div key={listing.id} className="flex flex-col gap-2">
+                <ListingCard listing={listing} />
+                {isConnected && !grantedListingIds.has(listing.id) && (
+                  <GrantPermissionButton
+                    listingId={listing.id}
+                    sessionAccountAddress={address as Address}
+                    price={String(listing.price_per_request)}
+                  />
+                )}
+              </div>
             ) : (
               <Card key={listing.id} className="flex flex-col md:flex-row md:items-center">
                 <CardHeader className="pb-2 md:pb-0 md:flex-1">
@@ -190,6 +223,15 @@ export default function MarketplacePage() {
                 <CardContent className="md:w-48 md:text-right">
                   <p className="font-semibold text-primary">{formatPrice(listing.price_per_request)}</p>
                   <p className="text-xs text-muted-foreground">per request</p>
+                  {isConnected && !grantedListingIds.has(listing.id) && (
+                    <div className="mt-2">
+                      <GrantPermissionButton
+                        listingId={listing.id}
+                        sessionAccountAddress={address as Address}
+                        price={String(listing.price_per_request)}
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )

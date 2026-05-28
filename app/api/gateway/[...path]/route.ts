@@ -1,24 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withX402 } from "@x402/next";
+import { x402ResourceServer, HTTPFacilitatorClient } from "@x402/core/server";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { verifyJWT } from "@/lib/jwt";
 import { decrypt, importKey } from "@/lib/encryption";
 import { createClient } from "@/lib/supabase-server";
 import type { JwtPayload, ListingWithProvider, ConsumerPermission } from "@/types";
 
-// Venice AI base URL
 const VENICE_API_BASE = "https://api.venice.ai/api/v1";
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  return proxyRequest(request, "GET");
-}
+const facilitatorClient = new HTTPFacilitatorClient({
+  url: process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator",
+});
+const server = new x402ResourceServer(facilitatorClient);
+server.register("eip155:84532", new ExactEvmScheme());
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  return proxyRequest(request, "POST");
-}
+async function handler(request: NextRequest): Promise<NextResponse> {
+  const method = request.method as "GET" | "POST";
 
-async function proxyRequest(
-  request: NextRequest,
-  method: "GET" | "POST",
-): Promise<NextResponse> {
   // Derive Venice path from the request URL (e.g. /api/gateway/v1/chat/completions → /v1/chat/completions)
   const url = request.nextUrl;
   const pathStr = url.pathname.replace(/^\/api\/gateway\//, "");
@@ -27,7 +26,10 @@ async function proxyRequest(
   // ── 1. Extract & validate JWT ──────────────────────────────────────────────
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return jsonError(401, "Missing or invalid Authorization header");
+    return NextResponse.json(
+      { error: "Missing or invalid Authorization header" },
+      { status: 401 },
+    );
   }
   const token = authHeader.slice(7);
 
@@ -36,31 +38,17 @@ async function proxyRequest(
     const result = await verifyJWT(token);
     payload = result as unknown as JwtPayload;
   } catch {
-    return jsonError(401, "Invalid or expired JWT");
+    return NextResponse.json({ error: "Invalid or expired JWT" }, { status: 401 });
   }
 
   if (!payload.consumer_id || !payload.listing_id) {
-    return jsonError(401, "JWT missing required claims (consumer_id, listing_id)");
+    return NextResponse.json(
+      { error: "JWT missing required claims (consumer_id, listing_id)" },
+      { status: 401 },
+    );
   }
 
-  // ── 2. Validate x402 payment header ───────────────────────────────────────
-  const paymentHeader = request.headers.get("x402-payment");
-  if (!paymentHeader) {
-    return jsonError(402, "Missing x402-payment header");
-  }
-
-  let payment: { tx_hash: string; amount: string; listing_id: string };
-  try {
-    payment = JSON.parse(paymentHeader);
-  } catch {
-    return jsonError(400, "Invalid x402-payment JSON");
-  }
-
-  if (payment.listing_id !== payload.listing_id) {
-    return jsonError(403, "Payment listing_id does not match JWT listing_id");
-  }
-
-  // ── 3. Verify consumer permission for this listing ─────────────────────────
+  // ── 2. Verify consumer permission for this listing ─────────────────────────
   const supabase = await createClient();
 
   const { data: permission, error: permError } = await supabase
@@ -72,49 +60,26 @@ async function proxyRequest(
 
   if (permError) {
     console.error("[gateway] Permission query error:", permError);
-    return jsonError(500, "Database error checking permissions");
+    return NextResponse.json(
+      { error: "Database error checking permissions" },
+      { status: 500 },
+    );
   }
 
   if (!permission) {
-    return jsonError(403, "Consumer does not have permission for this listing");
+    return NextResponse.json(
+      { error: "Consumer does not have permission for this listing" },
+      { status: 403 },
+    );
   }
 
   const perm = permission as unknown as ConsumerPermission;
 
-  // Check expiry
   if (perm.expires_at && new Date(perm.expires_at) < new Date()) {
-    return jsonError(403, "Permission has expired");
+    return NextResponse.json({ error: "Permission has expired" }, { status: 403 });
   }
 
-  // ── 4. Verify & record transaction ──────────────────────────────────────────
-  const { data: existingTx } = await supabase
-    .from("transactions")
-    .select("id, status")
-    .eq("tx_hash", payment.tx_hash)
-    .eq("listing_id", payment.listing_id)
-    .maybeSingle();
-
-  if (existingTx) {
-    if (existingTx.status === "failed" || existingTx.status === "refunded") {
-      return jsonError(402, "Transaction already failed or refunded");
-    }
-  } else {
-    // Record the transaction
-    const { error: insertError } = await supabase.from("transactions").insert({
-      listing_id: payment.listing_id,
-      consumer_id: payload.consumer_id,
-      tx_hash: payment.tx_hash,
-      amount: payment.amount,
-      status: "pending",
-    });
-
-    if (insertError) {
-      console.error("[gateway] Transaction insert error:", insertError);
-      return jsonError(500, "Failed to record transaction");
-    }
-  }
-
-  // ── 5. Get listing & decrypt provider API key ──────────────────────────────
+  // ── 3. Get listing & decrypt provider API key ──────────────────────────────
   const { data: listing, error: listingError } = await supabase
     .from("listings")
     .select("*, provider:providers(*)")
@@ -123,20 +88,29 @@ async function proxyRequest(
     .single();
 
   if (listingError || !listing) {
-    return jsonError(404, "Listing not found or not active");
+    return NextResponse.json(
+      { error: "Listing not found or not active" },
+      { status: 404 },
+    );
   }
 
   const listingWithProvider = listing as unknown as ListingWithProvider;
   const provider = listingWithProvider.provider;
 
   if (!provider?.encrypted_api_key) {
-    return jsonError(500, "Provider has no API key configured");
+    return NextResponse.json(
+      { error: "Provider has no API key configured" },
+      { status: 500 },
+    );
   }
 
   const encryptionKeyStr = process.env.QUOTRA_ENCRYPTION_KEY;
   if (!encryptionKeyStr) {
     console.error("[gateway] QUOTRA_ENCRYPTION_KEY not set");
-    return jsonError(500, "Server encryption key not configured");
+    return NextResponse.json(
+      { error: "Server encryption key not configured" },
+      { status: 500 },
+    );
   }
 
   let apiKey: string;
@@ -145,18 +119,19 @@ async function proxyRequest(
     apiKey = await decrypt(JSON.parse(provider.encrypted_api_key), key);
   } catch (err) {
     console.error("[gateway] API key decryption failed:", err);
-    return jsonError(500, "Failed to decrypt provider API key");
+    return NextResponse.json(
+      { error: "Failed to decrypt provider API key" },
+      { status: 500 },
+    );
   }
 
-  // ── 6. Build Venice AI request ─────────────────────────────────────────────
-  const VeniceUrl = `${VENICE_API_BASE}${venicePath}`;
+  // ── 4. Build Venice AI request ─────────────────────────────────────────────
+  const veniceUrl = `${VENICE_API_BASE}${venicePath}`;
 
-  // Extract Venice-specific headers
   const veniceRequestHeaders = new Headers();
   veniceRequestHeaders.set("Authorization", `Bearer ${apiKey}`);
   veniceRequestHeaders.set("Content-Type", "application/json");
 
-  // Forward relevant headers
   const forwardHeaders = [
     "accept",
     "content-type",
@@ -178,10 +153,10 @@ async function proxyRequest(
     }
   }
 
-  // ── 7. Proxy to Venice AI with streaming ───────────────────────────────────
+  // ── 5. Proxy to Venice AI with streaming ───────────────────────────────────
   let veniceResponse: Response;
   try {
-    veniceResponse = await fetch(VeniceUrl, {
+    veniceResponse = await fetch(veniceUrl, {
       method,
       headers: veniceRequestHeaders,
       body,
@@ -191,18 +166,26 @@ async function proxyRequest(
     });
   } catch (err) {
     console.error("[gateway] Venice fetch error:", err);
-    return jsonError(502, "Failed to reach Venice AI");
+    return NextResponse.json(
+      { error: "Failed to reach Venice AI" },
+      { status: 502 },
+    );
   }
 
   if (!veniceResponse.ok && veniceResponse.status !== 200) {
     const text = await veniceResponse.text().catch(() => "");
     console.error(`[gateway] Venice error ${veniceResponse.status}:`, text);
-    return jsonError(502, `Venice AI error: ${veniceResponse.status}`);
+    return NextResponse.json(
+      { error: `Venice AI error: ${veniceResponse.status}` },
+      { status: 502 },
+    );
   }
 
-  // ── 8. Stream response back to client ─────────────────────────────────────
+  // ── 6. Stream response back to client ─────────────────────────────────────
   const contentType = veniceResponse.headers.get("content-type") ?? "";
-  const isStreaming = contentType.includes("text/event-stream") || contentType.includes("stream");
+  const isStreaming =
+    contentType.includes("text/event-stream") ||
+    contentType.includes("stream");
 
   if (isStreaming) {
     const veniceStream = veniceResponse.body;
@@ -216,7 +199,6 @@ async function proxyRequest(
         try {
           const { done, value } = await reader.read();
           if (done) {
-            await markTransactionConfirmed(supabase, payment.tx_hash);
             controller.close();
             return;
           }
@@ -241,28 +223,20 @@ async function proxyRequest(
     });
   }
 
-  // Non-streaming response
   const data = await veniceResponse.json().catch(() => null);
-
-  // Mark transaction confirmed
-  await markTransactionConfirmed(supabase, payment.tx_hash);
-
   return NextResponse.json(data, { status: 200 });
 }
 
-// ── Helper functions ───────────────────────────────────────────────────────────
+const routeConfig = {
+  accepts: {
+    scheme: "exact",
+    payTo: process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "",
+    price: "$0.01" as const,
+    network: "eip155:84532" as const,
+  },
+  description: "AI API Gateway - pay per request",
+  mimeType: "application/json",
+};
 
-async function markTransactionConfirmed(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  txHash: string,
-): Promise<void> {
-  await supabase
-    .from("transactions")
-    .update({ status: "confirmed" })
-    .eq("tx_hash", txHash)
-    .eq("status", "pending");
-}
-
-function jsonError(status: number, message: string): NextResponse {
-  return NextResponse.json({ error: message }, { status });
-}
+export const GET = withX402(handler, routeConfig, server);
+export const POST = withX402(handler, routeConfig, server);

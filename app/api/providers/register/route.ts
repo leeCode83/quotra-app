@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
         name: parseResult.data.name,
         encrypted_api_key: encryptedApiKeyJson,
         delegation_json: parseResult.data.delegation_json ?? null,
+        signed_delegation: parseResult.data.signed_delegation ?? null,
+        delegation_id: parseResult.data.delegation_id ?? null,
         created_at: new Date().toISOString(),
       })
       .select("id, name")
