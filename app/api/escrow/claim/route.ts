@@ -87,7 +87,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         claimable_amount: 0,
         tx_hash: null,
+        status: "skipped",
       });
+    }
+
+    if (claimable < 0.001) {
+      return NextResponse.json(
+        { error: "BELOW_MINIMUM_CLAIM", detail: "Minimum claim is $0.001 USDC" },
+        { status: 400 }
+      );
     }
 
     const usdcMethodId = process.env.ONE_SHOT_API_USDC_CONTRACT_METHOD_ID;

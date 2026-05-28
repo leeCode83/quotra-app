@@ -77,19 +77,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { error } = await supabase
+    const { error: revokeError } = await supabase
       .from("listings")
       .update({ is_active: false })
       .eq("id", listingId);
 
-    if (error) {
+    if (revokeError) {
       return NextResponse.json(
-        { error: "Failed to revoke listing", details: error.message },
+        { error: "Failed to revoke listing", details: revokeError.message },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true });
+    const { error: permError } = await supabase
+      .from("consumer_permissions")
+      .update({ status: "revoked" })
+      .eq("listing_id", listingId)
+      .eq("status", "active");
+
+    return NextResponse.json({
+      success: true,
+      status: "revoked",
+      revoked_permissions: !permError,
+    });
   } catch (err) {
     return NextResponse.json(
       {

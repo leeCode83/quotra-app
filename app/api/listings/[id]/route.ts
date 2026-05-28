@@ -224,7 +224,13 @@ export async function DELETE(
       );
     }
 
-    return NextResponse.json({ success: true });
+    await supabase
+      .from("consumer_permissions")
+      .update({ status: "revoked" })
+      .eq("listing_id", id)
+      .eq("status", "active");
+
+    return NextResponse.json({ success: true, status: "revoked" });
   } catch (err) {
     return NextResponse.json(
       {

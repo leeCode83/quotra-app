@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useAccount, useWalletClient, usePublicClient } from "wagmi";
-import { parseUnits, keccak256, encodeAbiParameters, type Hex } from "viem";
+import { keccak256, encodeAbiParameters, type Hex } from "viem";
 import {
   toMetaMaskSmartAccount,
   Implementation,
@@ -11,11 +11,10 @@ import {
   ScopeType,
 } from "@metamask/smart-accounts-kit";
 
+const QUOTRA_SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Hex;
+
 export interface UseDelegationReturn {
-  createDelegation: (
-    providerAddress: Hex,
-    apiPrice: string
-  ) => Promise<{ delegationId: Hex; signedDelegation: Hex } | undefined>;
+  createProviderDelegation: () => Promise<{ delegationId: Hex; signedDelegation: Hex } | undefined>;
   signedDelegation: Hex | null;
   isLoading: boolean;
   error: string | null;
@@ -30,8 +29,8 @@ export function useDelegation(): UseDelegationReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const createDelegationFn = useCallback(
-    async (providerAddress: Hex, apiPrice: string) => {
+  const createProviderDelegation = useCallback(
+    async () => {
       if (!isConnected || !address || !walletClient || !publicClient) {
         setError("Wallet not connected");
         return;
@@ -52,13 +51,12 @@ export function useDelegation(): UseDelegationReturn {
         const environment = getSmartAccountsEnvironment(84532);
 
         const delegation = createDelegation({
-          to: providerAddress,
           from: smartAccount.address,
+          to: QUOTRA_SERVER_ACCOUNT,
           environment,
           scope: {
-            type: ScopeType.Erc20TransferAmount,
-            tokenAddress: process.env.NEXT_PUBLIC_USDC_ADDRESS as Hex,
-            maxAmount: parseUnits(apiPrice, 6),
+            type: ScopeType.NativeTokenTransferAmount,
+            maxAmount: 0n,
           },
         });
 
@@ -99,7 +97,7 @@ export function useDelegation(): UseDelegationReturn {
   );
 
   return {
-    createDelegation: createDelegationFn,
+    createProviderDelegation,
     signedDelegation,
     isLoading,
     error,

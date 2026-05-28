@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { createWalletClient, custom, type Address, parseUnits } from "viem"
+import { createWalletClient, custom, type Address } from "viem"
 import { baseSepolia } from "viem/chains"
 import { erc7715ProviderActions } from "@metamask/smart-accounts-kit/actions"
 import { Button } from "@/components/ui/button"
@@ -15,14 +15,12 @@ declare global {
 interface GrantPermissionButtonProps {
   listingId: string
   sessionAccountAddress: Address
-  price: string
-  onSuccess?: () => void
+  onSuccess?: (result: { permissionId: string; expiresAt: string }) => void
 }
 
 export function GrantPermissionButton({
   listingId,
   sessionAccountAddress,
-  price,
   onSuccess,
 }: GrantPermissionButtonProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -43,7 +41,7 @@ export function GrantPermissionButton({
       }).extend(erc7715ProviderActions())
 
       const currentTime = Math.floor(Date.now() / 1000)
-      const expiry = currentTime + 604800
+      const expiry = currentTime + 86400
 
       const grantedPermissions = await walletClient.requestExecutionPermissions([
         {
@@ -51,24 +49,18 @@ export function GrantPermissionButton({
           to: sessionAccountAddress,
           expiry,
           permission: {
-            type: "erc20-token-periodic",
+            type: "native-token-allowance",
             isAdjustmentAllowed: false,
             data: {
-              tokenAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as Address,
-              periodAmount: parseUnits(price, 6),
-              periodDuration: 86400,
+              allowanceAmount: 0n,
             },
           },
         },
       ])
 
-      const token = localStorage.getItem("quotra_jwt");
       const res = await fetch("/api/permissions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           listing_id: listingId,
           erc7715_proof: JSON.stringify(grantedPermissions),
@@ -81,7 +73,8 @@ export function GrantPermissionButton({
         throw new Error(body.error ?? `API returned ${res.status}`);
       }
 
-      onSuccess?.()
+      const data = await res.json();
+      onSuccess?.({ permissionId: data.permissionId, expiresAt: data.expiresAt });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to grant permission")
     } finally {

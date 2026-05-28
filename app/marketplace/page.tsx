@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ListingCard } from "@/components/ListingCard";
 import { GrantPermissionButton } from "@/components/GrantPermissionButton";
+const SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Address;
 import { cn, formatPrice } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-client";
 import type { Address } from "viem";
@@ -200,8 +201,7 @@ export default function MarketplacePage() {
                 {isConnected && !grantedListingIds.has(listing.id) && (
                   <GrantPermissionButton
                     listingId={listing.id}
-                    sessionAccountAddress={address as Address}
-                    price={String(listing.price_per_request)}
+                    sessionAccountAddress={SERVER_ACCOUNT}
                   />
                 )}
               </div>
@@ -227,8 +227,7 @@ export default function MarketplacePage() {
                     <div className="mt-2">
                       <GrantPermissionButton
                         listingId={listing.id}
-                        sessionAccountAddress={address as Address}
-                        price={String(listing.price_per_request)}
+                        sessionAccountAddress={SERVER_ACCOUNT}
                       />
                     </div>
                   )}

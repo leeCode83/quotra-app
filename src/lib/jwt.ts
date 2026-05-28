@@ -6,7 +6,7 @@
 import { SignJWT, jwtVerify, JWTPayload } from "jose";
 
 const JWT_ALGORITHM = "HS256";
-const JWT_EXPIRY = "1h";
+const JWT_EXPIRY = "24h";
 
 /**
  * Gets the JWT secret from environment variable

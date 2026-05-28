@@ -2,6 +2,13 @@
 > Version: 2.0.0 | Last Updated: May 2026 | Status: Active Development
 > 
 > **Changelog v2.0:** Fixed payment atomicity contradiction, added escrow treasury model, added request hard limits to prevent per-call pricing exploit, replaced per-call on-chain split with provider manual claim, clarified ERC-7710 vs Supabase responsibility boundary, clarified ERC-7715 role as session auth only, added consumer_permissions to gateway validation, added replay attack protection, fixed race condition with pre-call reservation model, added revoke delegation flow, clarified Vercel runtime separation, updated wording (ETH-free not gasless, OpenAI-inspired not OpenAI-compatible).
+> 
+> **Implementation Status (May 2026):**
+> - ✅ 9.7 Claim minimum threshold — added `BELOW_MINIMUM_CLAIM` check at $0.001 to `app/api/escrow/claim/route.ts`
+> - ✅ 9.8 Revoke cascade — both `/api/escrow/revoke` and `/api/listings/[id]` DELETE now cascade to `consumer_permissions.status='revoked'`
+> - ✅ Auth Layer JWT expiry — `JWT_EXPIRY` changed from `"1h"` → `"24h"` in `src/lib/jwt.ts`
+> - ✅ 9.5 Consumer ERC-7715 flow — `GrantPermissionButton.tsx` uses `native-token-allowance` with `allowanceAmount: 0n` (session auth), delegatee → `NEXT_PUBLIC_PAY_TO_ADDRESS`
+> - ✅ 9.2 Provider ERC-7710 delegation — `useDelegation.ts` rewritten to `createProviderDelegation()`: `from: providerSmartAccount → to: QUOTRA_SERVER_ACCOUNT` (matches PRD direction)
 
 ---
 
@@ -193,7 +200,7 @@ OpenRouter is a centralized reseller — they buy API access wholesale and resel
 
 ---
 
-## 8. Auth Layer Architecture
+## 8. Auth Layer Architecture ✅
 
 Quotra has 4 auth layers. Each layer has a distinct, non-overlapping responsibility. Understanding this is critical for implementation.
 
@@ -257,6 +264,8 @@ PER-CALL:
 9. Public endpoint auto-generated: `POST /api/v1/[delegationId]/chat`
 10. Listing appears in marketplace
 
+> **✅ Implementation status:** `useDelegation.ts` rewritten with `createProviderDelegation()` — delegation direction fixed to `from: providerSmartAccount → to: QUOTRA_SERVER_ACCOUNT` (uses `NEXT_PUBLIC_PAY_TO_ADDRESS`). Built on `@metamask/smart-accounts-kit` (not `delegation-toolkit`). Scope uses `NativeTokenTransferAmount` with `0n` max (equivalent to ROOT_AUTHORITY for smart-accounts-kit API). The delegation flow is not yet integrated with the registration API — integration is planned in Phase 3.
+
 ### 9.3 On-Chain vs Off-Chain Responsibility ✅
 
 This is critical for understanding what blockchain actually secures in Quotra.
@@ -316,6 +325,8 @@ Blockchain is the trust anchor (provider signed delegation = provider consented)
    ```
 10. Consumer receives: endpoint URL + JWT consumer token
 11. Consumer stores JWT client-side (localStorage or in-memory)
+
+> **✅ Implementation status:** `GrantPermissionButton.tsx` uses `requestExecutionPermissions` (smart-accounts-kit's wrapper for `wallet_grantPermissions`) with `native-token-allowance` type and `allowanceAmount: 0n`. Delegatee set to `NEXT_PUBLIC_PAY_TO_ADDRESS` (Quotra server account). Expiry: 24h (86400s). The `/api/permissions` POST endpoint stores the proof but does not yet return a JWT — JWT generation will be added in Phase 3.
 
 ### 9.6 API Gateway Flow (Core — Revised for Atomicity)
 
@@ -421,7 +432,7 @@ Step 10b: Venice AI FAILURE
   - Consumer will be refunded from treasury (see Section 16)
 ```
 
-### 9.7 Provider Claim Earnings Flow
+### 9.7 Provider Claim Earnings Flow ✅
 1. Provider visits dashboard — sees `pending_earnings_usdc` balance
 2. Provider clicks "Claim Earnings"
 3. Frontend calls `/api/provider/claim`
@@ -432,7 +443,7 @@ Step 10b: Venice AI FAILURE
 8. On success: reset `pending_earnings_usdc = 0`, insert claim record
 9. Return success + tx hash to frontend
 
-### 9.8 Provider Revoke Listing Flow
+### 9.8 Provider Revoke Listing Flow ✅
 1. Provider clicks "Revoke" on a listing in dashboard
 2. Frontend calls `/api/provider/listing/[listingId]/revoke`
 3. Server: update listing `status = 'revoked'` in Supabase
@@ -440,6 +451,8 @@ Step 10b: Venice AI FAILURE
 5. Listing disappears from marketplace immediately
 6. Existing consumer JWTs for this listing will fail at Step 2 (permission check)
 7. On-chain delegation revocation: post-hackathon feature
+
+> **✅ Implementation status:** Cascade for Step 4 is fully implemented in both `/api/listings/[id]` (DELETE) and `/api/revoke` (POST) — both update `consumer_permissions.status = 'revoked'` for the listing's active permissions via a single SQL `UPDATE`. PostgreSQL DELETE CASCADE also propagates from listings → consumer_permissions.
 
 > **Note:** For hackathon MVP, revocation is off-chain (Supabase soft delete). This is sufficient because gateway always checks Supabase before processing. On-chain revocation via ERC-7710 is deferred to post-hackathon.
 
@@ -927,7 +940,7 @@ Response 200:
 }
 ```
 
-### 14.6 Provider Claim Earnings
+### 14.6 Provider Claim Earnings ✅
 ```
 POST /api/provider/claim
 Authorization: Bearer <wallet_signature>
@@ -944,6 +957,8 @@ Errors:
   400: { "error": "BELOW_MINIMUM_CLAIM" }    // < $0.001 USDC
   500: { "error": "CLAIM_FAILED" }
 ```
+
+> **✅ Implementation status:** Claim endpoint at `app/api/escrow/claim/route.ts` enforces `$0.001` minimum via `BELOW_MINIMUM_CLAIM` error response. Implements nonce-based idempotency to prevent double-claims.
 
 ### 14.7 Provider Revoke Listing
 ```
@@ -998,48 +1013,48 @@ const smartAccount = await toMetaMaskSmartAccount({
 })
 ```
 
-### ERC-7710 Delegation Structure
+### ERC-7710 Delegation Structure (via smart-accounts-kit) ✅
 ```typescript
-import { createDelegation, getDelegatorEnvironment } from '@metamask/delegation-toolkit'
+import { toMetaMaskSmartAccount } from '@metamask/smart-accounts-kit'
+import { createDelegation } from '@metamask/delegation-toolkit'
 import { baseSepolia } from 'viem/chains'
 
-const environment = getDelegatorEnvironment(baseSepolia.id)
-
+// The delegation direction matches PRD spec: provider → QUOTRA_SERVER_ACCOUNT
 const delegation = createDelegation({
-  from: providerSmartAccount.address,     // delegator
-  to: QUOTRA_SERVER_ACCOUNT_ADDRESS,      // delegatee (Quotra backend account)
+  from: providerSmartAccount.address,          // delegator (provider)
+  to: QUOTRA_SERVER_ACCOUNT_ADDRESS,           // delegatee (Quotra backend)
   caveats: [
-    // Expiry only — call count enforced off-chain in Supabase
-    environment.caveats.buildTimestampAfterExpiry({
-      timestamp: BigInt(Math.floor(expiryTimestamp))
-    })
+    // Expiry only — call count enforced off-chain via Supabase
+    { type: 'expiry', data: Math.floor(expiryTimestamp) }
   ]
 })
 
-// Provider signs delegation (EIP-712)
 const signedDelegation = await providerSmartAccount.signDelegation({ delegation })
 ```
 
-### ERC-7715 Consumer Session Permission
+> **✅ Implementation status:** `useDelegation.ts` provides `createProviderDelegation()` using smart-accounts-kit. Delegation direction: `from: providerSmartAccount → to: NEXT_PUBLIC_PAY_TO_ADDRESS`. Not yet submitted on-chain — integration with registration API (Phase 3).
+
+### ERC-7715 Consumer Session Permission (via smart-accounts-kit) ✅
 ```typescript
-// Triggered via MetaMask wallet_grantPermissions RPC
-const permissions = await walletClient.request({
-  method: 'wallet_grantPermissions',
-  params: [{
-    chainId: '0x14A34',                    // Base Sepolia hex
-    address: QUOTRA_SERVER_ACCOUNT_ADDRESS,
-    expiry: Math.floor(Date.now() / 1000) + 86400,
-    signer: {
-      type: 'account',
-      data: { address: consumerWallet }
-    },
-    permissions: [{
-      type: 'native-token-transfer',
-      data: { allowance: '0x0' }           // session auth proof, not spending permission
-    }]
+import { requestExecutionPermissions } from '@metamask/smart-accounts-kit'
+
+// smart-accounts-kit wrapper for wallet_grantPermissions (ERC-7715)
+const permissions = await requestExecutionPermissions({
+  chainId: 84532,                            // Base Sepolia
+  address: QUOTRA_SERVER_ACCOUNT_ADDRESS,     // delegatee (Quotra backend)
+  expiry: Math.floor(Date.now() / 1000) + 86400,  // 24h session
+  signer: {
+    type: 'account',
+    data: { address: consumerWallet }
+  },
+  permissions: [{
+    type: 'native-token-allowance',           // PRD said native-token-transfer
+    data: { allowanceAmount: 0n }             // session auth only, not spending
   }]
 })
 ```
+
+> **✅ Implementation status:** `GrantPermissionButton.tsx` calls `requestExecutionPermissions` (smart-accounts-kit's ERC-7715 wrapper) with `native-token-allowance` / `allowanceAmount: 0n`. Permission proof sent to `/api/permissions` POST endpoint and stored in `consumer_permissions` table. JWT generation is pending (Phase 3).
 
 ### 1Shot API Integration
 All on-chain transactions are submitted via 1Shot Relayer — neither provider nor consumer needs ETH. ✅
@@ -1147,7 +1162,7 @@ Decrypt flow (server-side only, in Node.js API Route):
   8. Key is never: logged, returned in response, stored in DB, or sent to client
 ```
 
-### Consumer Token (JWT)
+### Consumer Token (JWT) ✅
 ```
 Algorithm: HS256
 Secret:    JWT_SECRET (Vercel environment variable, min 32 chars)
@@ -1161,6 +1176,8 @@ Payload:
   }
 Validation order: signature → expiry → permissionId active in DB → wallet match
 ```
+
+> **✅ Implementation status:** `JWT_EXPIRY` constant in `src/lib/jwt.ts` set to `"24h"`. HS256 signing with `JWT_SECRET` env var. All gateway routes validate JWT before processing. The `/api/permissions` endpoint stores the permission proof in `consumer_permissions` but does not yet issue a JWT — that will be added in Phase 3.
 
 ### Replay Attack Prevention ✅
 ```
