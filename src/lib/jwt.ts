@@ -5,6 +5,12 @@
 
 import { SignJWT, jwtVerify, JWTPayload } from "jose";
 
+export interface ConsumerJWTPayload extends JWTPayload {
+  consumerWallet: string;
+  delegationId: string;
+  permissionId: string;
+}
+
 const JWT_ALGORITHM = "HS256";
 const JWT_EXPIRY = "24h";
 
@@ -39,7 +45,7 @@ export async function signJWT(
       .setProtectedHeader({ alg: JWT_ALGORITHM })
       .setIssuedAt()
       .setExpirationTime(JWT_EXPIRY)
-      .setSubject(subject ?? (payload.wallet_address as string));
+      .setSubject(subject ?? (payload.consumerWallet as string));
 
     const token = await jwt.sign(secret);
     return token;

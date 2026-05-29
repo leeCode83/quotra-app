@@ -8,73 +8,55 @@ const KEY_LENGTH = 256;
 const IV_LENGTH = 12; // 96 bits as recommended for AES-GCM
 
 /**
- * Generates a random AES-256-GCM encryption key
- * @returns Promise<CryptoKey> - The generated encryption key
- * @throws Error if key generation fails
+ * Converts an ArrayBuffer to a hex string
  */
-export async function generateEncryptionKey(): Promise<CryptoKey> {
-  try {
-    const key = await crypto.subtle.generateKey(
-      {
-        name: ALGORITHM,
-        length: KEY_LENGTH,
-      },
-      true, // extractable
-      ["encrypt", "decrypt"]
-    );
-    return key;
-  } catch (error) {
-    throw new Error(
-      `Failed to generate encryption key: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
-  }
+export function bufferToHex(buffer: ArrayBuffer): string {
+  const hashArray = Array.from(new Uint8Array(buffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**
- * Exports a CryptoKey to a base64 string for storage
- * @param key - The CryptoKey to export
- * @returns Promise<string> - Base64 encoded key
- * @throws Error if export fails
+ * Converts a hex string to a Uint8Array
  */
-export async function exportKey(key: CryptoKey): Promise<string> {
-  try {
-    const exported = await crypto.subtle.exportKey("raw", key);
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(exported)));
-    return base64;
-  } catch (error) {
-    throw new Error(
-      `Failed to export encryption key: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
+export function hexToBuffer(hex: string): Uint8Array {
+  if (hex.length % 2 !== 0) throw new Error("Invalid hex string");
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
   }
+  return bytes;
 }
 
 /**
- * Imports a base64 encoded string back into a CryptoKey
- * @param keyStr - Base64 encoded key string
- * @returns Promise<CryptoKey> - The imported key
- * @throws Error if import fails
+ * Gets the encryption key from environment variable
+ * @returns Promise<CryptoKey> - The encryption key
+ * @throws Error if ENCRYPTION_KEY environment variable is not set or invalid
  */
-export async function importKey(keyStr: string): Promise<CryptoKey> {
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const hexKey = process.env.ENCRYPTION_KEY;
+  if (!hexKey) {
+    throw new Error("ENCRYPTION_KEY environment variable is not set.");
+  }
+  
   try {
-    const binaryStr = atob(keyStr);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) {
-      bytes[i] = binaryStr.charCodeAt(i);
+    const keyBytes = hexToBuffer(hexKey);
+    if (keyBytes.byteLength !== KEY_LENGTH / 8) {
+      throw new Error(`ENCRYPTION_KEY must be exactly ${KEY_LENGTH / 8} bytes (${KEY_LENGTH / 4} hex chars)`);
     }
-    const key = await crypto.subtle.importKey(
+
+    return await crypto.subtle.importKey(
       "raw",
-      bytes,
+      keyBytes.buffer as ArrayBuffer,
       {
         name: ALGORITHM,
         length: KEY_LENGTH,
       },
-      true,
+      false, // non-extractable
       ["encrypt", "decrypt"]
     );
-    return key;
   } catch (error) {
     throw new Error(
-      `Failed to import encryption key: ${error instanceof Error ? error.message : "Unknown error"}`
+      `Failed to initialize encryption key: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }
@@ -82,15 +64,14 @@ export async function importKey(keyStr: string): Promise<CryptoKey> {
 /**
  * Encrypts data using AES-256-GCM
  * @param data - Plaintext string to encrypt
- * @param key - CryptoKey for encryption
- * @returns Promise<{ ciphertext: string; iv: string }> - Base64 encoded ciphertext and IV
+ * @returns Promise<{ encrypted_key: string; key_iv: string; key_auth_tag: string }> - Hex encoded ciphertext, IV, and auth tag
  * @throws Error if encryption fails
  */
 export async function encrypt(
-  data: string,
-  key: CryptoKey
-): Promise<{ ciphertext: string; iv: string }> {
+  data: string
+): Promise<{ encrypted_key: string; key_iv: string; key_auth_tag: string }> {
   try {
+    const key = await getEncryptionKey();
     const encoder = new TextEncoder();
     const encodedData = encoder.encode(data);
 
@@ -99,18 +80,21 @@ export async function encrypt(
     const encryptedBuffer = await crypto.subtle.encrypt(
       {
         name: ALGORITHM,
-        iv,
+        iv: iv.buffer as ArrayBuffer,
       },
       key,
-      encodedData
+      encodedData.buffer as ArrayBuffer
     );
 
-    const ciphertext = btoa(String.fromCharCode(...new Uint8Array(encryptedBuffer)));
-    const ivBase64 = btoa(String.fromCharCode(...iv));
+    // Web Crypto appends the 16-byte authentication tag to the ciphertext
+    const encryptedBytes = new Uint8Array(encryptedBuffer);
+    const ciphertext = encryptedBytes.slice(0, -16);
+    const authTag = encryptedBytes.slice(-16);
 
     return {
-      ciphertext,
-      iv: ivBase64,
+      encrypted_key: bufferToHex(ciphertext.buffer),
+      key_iv: bufferToHex(iv.buffer),
+      key_auth_tag: bufferToHex(authTag.buffer),
     };
   } catch (error) {
     throw new Error(
@@ -121,33 +105,39 @@ export async function encrypt(
 
 /**
  * Decrypts data using AES-256-GCM
- * @param encrypted - Object containing base64 encoded ciphertext and iv
- * @param key - CryptoKey for decryption
+ * @param encrypted_key - Hex encoded ciphertext
+ * @param key_iv - Hex encoded IV
+ * @param key_auth_tag - Hex encoded authentication tag
  * @returns Promise<string> - Decrypted plaintext
  * @throws Error if decryption fails
  */
 export async function decrypt(
-  encrypted: { ciphertext: string; iv: string },
-  key: CryptoKey
+  encrypted_key: string,
+  key_iv: string,
+  key_auth_tag: string
 ): Promise<string> {
   try {
-    const ciphertextBytes = Uint8Array.from(atob(encrypted.ciphertext), (c) =>
-      c.charCodeAt(0)
-    );
-    const ivBytes = Uint8Array.from(atob(encrypted.iv), (c) => c.charCodeAt(0));
+    const key = await getEncryptionKey();
+    const ciphertextBytes = hexToBuffer(encrypted_key);
+    const ivBytes = hexToBuffer(key_iv);
+    const authTagBytes = hexToBuffer(key_auth_tag);
+
+    // Web Crypto expects the authentication tag to be appended to the ciphertext
+    const combinedBytes = new Uint8Array(ciphertextBytes.length + authTagBytes.length);
+    combinedBytes.set(ciphertextBytes);
+    combinedBytes.set(authTagBytes, ciphertextBytes.length);
 
     const decryptedBuffer = await crypto.subtle.decrypt(
       {
         name: ALGORITHM,
-        iv: ivBytes,
+        iv: ivBytes.buffer as ArrayBuffer,
       },
       key,
-      ciphertextBytes
+      combinedBytes.buffer as ArrayBuffer
     );
 
     const decoder = new TextDecoder();
-    const plaintext = decoder.decode(decryptedBuffer);
-    return plaintext;
+    return decoder.decode(decryptedBuffer);
   } catch (error) {
     throw new Error(
       `Failed to decrypt data: ${error instanceof Error ? error.message : "Unknown error"}`

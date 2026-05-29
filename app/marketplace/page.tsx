@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { Search, Filter, Grid3X3, List, Check, ExternalLink } from "lucide-react";
+import { Search, Filter, Grid3X3, List, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +24,7 @@ export default function MarketplacePage() {
   const [sortBy, setSortBy] = useState<string>("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-  const { address, isConnected } = useAccount();
+  const { isConnected } = useAccount();
   const queryClient = useQueryClient();
 
   const { data: listings = [], isLoading, error } = useQuery<ListingWithProvider[]>({
@@ -72,7 +72,7 @@ export default function MarketplacePage() {
           l.name.toLowerCase().includes(q) ||
           (l.description?.toLowerCase().includes(q) ?? false) ||
           l.model_name.toLowerCase().includes(q) ||
-          (l.provider?.name.toLowerCase().includes(q) ?? false)
+          (l.provider?.wallet_address.toLowerCase().includes(q) ?? false)
       );
     }
 
@@ -212,7 +212,7 @@ export default function MarketplacePage() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {listing.provider?.name ?? "Unknown"} · {listing.model_name}
+                    {listing.provider?.wallet_address ? `${listing.provider.wallet_address.slice(0,6)}...${listing.provider.wallet_address.slice(-4)}` : "Unknown"} · {listing.model_name}
                   </p>
                 </CardHeader>
                 <CardContent className="md:w-48 md:text-right">

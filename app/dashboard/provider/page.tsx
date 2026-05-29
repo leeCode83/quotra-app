@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Loader2, AlertCircle, Check, Wallet, LogIn, UserPlus,
-  FileKey, List, ArrowRight, ArrowLeft, ChevronDown,
+  FileKey, List, ArrowRight, ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import { formatAddress } from "@/lib/utils";
 import type { Listing, Provider } from "@/types";
 
 const STEPS = ["Auth", "Register", "Delegation", "Create Listing"] as const;
-type Step = (typeof STEPS)[number];
+
 
 const emptyListingForm = {
   name: "",
@@ -54,8 +54,8 @@ function StepIndicator({ current, steps }: { current: number; steps: readonly st
 }
 
 export default function ProviderDashboardPage() {
-  const { session, isWrongChain, disconnect, connect } = useWallet();
-  const { token, isLoading: authLoading, login, logout } = useAuth();
+  const { session, isWrongChain, disconnect } = useWallet();
+  const { token, isLoading: authLoading, login } = useAuth();
   const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
   const [providerData, setProviderData] = useState<Provider | null>(null);
@@ -181,10 +181,11 @@ export default function ProviderDashboardPage() {
         issuedAt: currentTime,
       });
 
-      const signature: string = await window.ethereum.request({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const signature: string = await (window.ethereum.request as any)({
         method: "personal_sign",
         params: [delegationMessage, session.address],
-      } as any);
+      });
 
       setDelegation({
         id: `del_${session.address.toLowerCase()}_${currentTime}`,

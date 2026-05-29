@@ -44,21 +44,23 @@ export async function GET() {
       );
     }
 
-    const formatted = (listings ?? []).map((item: Record<string, unknown>) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      model_name: item.model_name,
-      price_per_call_usdc: item.price_per_call_usdc,
-      max_calls: item.max_calls,
-      remaining_calls: item.remaining_calls,
-      max_input_chars: item.max_input_chars,
-      max_completion_tokens: item.max_completion_tokens,
-      provider_name: (item.providers as Array<Record<string, unknown>>)?.[0]?.name ?? null,
-      provider_wallet: (item.providers as Array<Record<string, unknown>>)?.[0]?.wallet_address ?? null,
-      created_at: item.created_at,
-      expires_at: item.expires_at,
-    }));
+    const formatted = (listings ?? []).map((item: Record<string, unknown>) => {
+      const wallet = (item.providers as Array<Record<string, unknown>>)?.[0]?.wallet_address as string | undefined;
+      const providerWallet = wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : null;
+
+      return {
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        modelName: item.model_name,
+        pricePerCallUsdc: item.price_per_call_usdc,
+        maxCalls: item.max_calls,
+        remainingCalls: item.remaining_calls,
+        providerWallet,
+        createdAt: item.created_at,
+        expiresAt: item.expires_at,
+      };
+    });
 
     return NextResponse.json({ success: true, listings: formatted });
   } catch (err) {

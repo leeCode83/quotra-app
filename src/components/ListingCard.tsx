@@ -74,7 +74,7 @@ export function ListingCard({ listing, isLoading, error, className }: ListingCar
         </div>
         {listing.provider && (
           <p className="text-xs text-muted-foreground mt-1">
-            by {listing.provider.name}
+            by {listing.provider.wallet_address.slice(0, 6)}...{listing.provider.wallet_address.slice(-4)}
           </p>
         )}
       </CardHeader>

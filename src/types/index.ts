@@ -9,7 +9,6 @@ export interface EscrowStats {
 export interface Provider {
   id: string;
   wallet_address: string;
-  name: string;
   pending_earnings_usdc: string | null;
   total_earned_usdc: string | null;
   encrypted_api_key: string | null;
@@ -42,7 +41,7 @@ export interface Listing {
 export interface Consumer {
   id: string;
   wallet_address: string;
-  name: string | null;
+  total_spent_usdc: string;
   created_at: string;
 }
 
@@ -62,10 +61,16 @@ export interface Transaction {
   id: string;
   listing_id: string;
   consumer_id: string;
-  tx_hash: string;
-  amount: string;
+  payment_tx_hash: string;
+  amount_usdc: string;
+  provider_amount_usdc: string;
+  platform_amount_usdc: string;
   status: TransactionStatus;
+  prompt_tokens?: number;
+  completion_tokens?: number;
   created_at: string;
+  completed_at?: string;
+  updated_at?: string;
 }
 
 export type ClaimStatus = "pending" | "claimed" | "failed";
@@ -73,10 +78,11 @@ export type ClaimStatus = "pending" | "claimed" | "failed";
 export interface ClaimHistory {
   id: string;
   provider_id: string;
-  amount: number;
+  amount_usdc: number;
   tx_hash: string | null;
   status: ClaimStatus;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ListingWithProvider extends Listing {

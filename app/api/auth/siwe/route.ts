@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, http, verifyMessage, type Address } from "viem";
-import { baseSepolia } from "viem/chains";
+import { verifyMessage, type Address } from "viem";
 import { signJWT } from "@/lib/jwt";
 
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
@@ -22,10 +21,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "signature is required" }, { status: 400 });
     }
 
-    const client = createPublicClient({
-      chain: baseSepolia,
-      transport: http(),
-    });
 
     const valid = await verifyMessage({
       address: wallet_address as Address,

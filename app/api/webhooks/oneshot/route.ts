@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { getStatus } from "@/lib/oneshot";
 
 interface OneShotWebhookPayload {
   event: string;
@@ -29,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient();
 
-    const { relayer_tx_id, tx_hash, status } = body.data;
+    const { relayer_tx_id, tx_hash } = body.data;
 
     if (relayer_tx_id) {
       const { error: txError } = await supabase

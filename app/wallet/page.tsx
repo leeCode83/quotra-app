@@ -81,7 +81,7 @@ function TransactionRow({ tx }: { tx: TransactionItem }) {
       <div className="flex items-center gap-4">
         <span className={`text-sm font-semibold ${typeColors[tx.type]}`}>
           {tx.type === "payment" || tx.type === "withdraw" ? "-" : "+"}
-          {tx.amount} ETH
+          {tx.amount} USDC
         </span>
         <div className="flex items-center gap-1">{statusIcon}</div>
         {tx.txHash && (
@@ -127,10 +127,10 @@ export default function WalletPage() {
       return (data ?? []).map((tx) => ({
         id: tx.id,
         type: "payment" as const,
-        amount: (tx.amount / 1e18).toFixed(4),
+        amount: tx.amount_usdc ? tx.amount_usdc.toString() : "0.0000",
         status: tx.status === "refunded" ? "failed" as const : tx.status as "confirmed" | "pending" | "failed",
         timestamp: tx.created_at,
-        txHash: tx.tx_hash,
+        txHash: tx.payment_tx_hash,
       }));
     },
   });

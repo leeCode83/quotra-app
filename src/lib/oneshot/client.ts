@@ -105,7 +105,7 @@ export async function executeMethod(
   methodId: string,
   args: Record<string, unknown>
 ): Promise<ExecuteMethodResult> {
-  const businessId = process.env.ONE_SHOT_API_BUSINESS_ID;
+
   const walletId = process.env.ONE_SHOT_API_TREASURY_WALLET_ID;
 
   const body: Record<string, unknown> = { args };

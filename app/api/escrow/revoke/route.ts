@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     const { data: listing, error: listingError } = await supabase
       .from("listings")
-      .select("provider_id")
+      .select("provider_id, status")
       .eq("id", listingId)
       .single();
 
@@ -77,9 +77,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (listing.status === "revoked") {
+      return NextResponse.json(
+        { error: "ALREADY_REVOKED" },
+        { status: 410 }
+      );
+    }
+
     const { error: revokeError } = await supabase
       .from("listings")
-      .update({ is_active: false })
+      .update({ status: "revoked" })
       .eq("id", listingId);
 
     if (revokeError) {
@@ -89,16 +96,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { error: permError } = await supabase
+    await supabase
       .from("consumer_permissions")
       .update({ status: "revoked" })
       .eq("listing_id", listingId)
       .eq("status", "active");
 
     return NextResponse.json({
-      success: true,
+      listingId,
       status: "revoked",
-      revoked_permissions: !permError,
     });
   } catch (err) {
     return NextResponse.json(

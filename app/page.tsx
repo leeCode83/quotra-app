@@ -3,6 +3,7 @@ import { ArrowRight, Cpu, Shield, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroSection } from "@/components/HeroSection";
+import { createClient } from "@/lib/supabase-server";
 
 const features = [
   {
@@ -25,46 +26,29 @@ const features = [
   },
 ];
 
-const sampleListings = [
-  {
-    id: "1",
-    name: "GPT-4 Turbo",
-    provider_id: "p1",
-    description: "High-quality text generation with advanced reasoning capabilities.",
-    model_type: "text-generation",
-    price_per_request: 0.002,
-    endpoint_url: "https://api.example.com/v1/gpt4",
-    is_active: true,
-    created_at: "2024-01-15T00:00:00Z",
-    provider: { id: "p1", wallet_address: "0x1234", name: "AI Labs", encrypted_api_key: null, delegation_json: null, created_at: "2024-01-01T00:00:00Z" },
-  },
-  {
-    id: "2",
-    name: "Stable Diffusion XL",
-    provider_id: "p2",
-    description: "Generate stunning images from text prompts with state-of-the-art quality.",
-    model_type: "image-generation",
-    price_per_request: 0.005,
-    endpoint_url: "https://api.example.com/v1/sdxl",
-    is_active: true,
-    created_at: "2024-02-10T00:00:00Z",
-    provider: { id: "p2", wallet_address: "0x5678", name: "VisionAI", encrypted_api_key: null, delegation_json: null, created_at: "2024-01-05T00:00:00Z" },
-  },
-  {
-    id: "3",
-    name: "Whisper Transcribe",
-    provider_id: "p3",
-    description: "Accurate speech-to-text transcription supporting 50+ languages.",
-    model_type: "speech",
-    price_per_request: 0.001,
-    endpoint_url: "https://api.example.com/v1/whisper",
-    is_active: true,
-    created_at: "2024-03-01T00:00:00Z",
-    provider: { id: "p3", wallet_address: "0x9abc", name: "VoiceTech", encrypted_api_key: null, delegation_json: null, created_at: "2024-01-10T00:00:00Z" },
-  },
-];
+export default async function HomePage() {
+  const supabase = await createClient();
+  const { data: listings } = await supabase
+    .from("listings")
+    .select("id, name, description, model_name, price_per_call_usdc, providers ( wallet_address )")
+    .eq("status", "active")
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(3);
 
-export default function HomePage() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const featuredListings = (listings ?? []).map((item: any) => {
+    const wallet = item.providers?.[0]?.wallet_address;
+    return {
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      modelName: item.model_name,
+      pricePerCallUsdc: parseFloat(item.price_per_call_usdc || 0),
+      providerWallet: wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : "Unknown",
+    };
+  });
+
   return (
     <>
       <HeroSection />
@@ -108,27 +92,40 @@ export default function HomePage() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sampleListings.map((listing) => (
-            <Card key={listing.id} className="flex flex-col">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-lg leading-tight">{listing.name}</CardTitle>
-                  <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                    {listing.model_type === "text-generation" ? "Text Gen" : listing.model_type === "image-generation" ? "Image Gen" : listing.model_type === "speech" ? "Speech" : listing.model_type}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">by {listing.provider?.name ?? "Unknown"}</p>
-              </CardHeader>
-              <CardContent className="flex-1">
-                <p className="text-sm text-muted-foreground line-clamp-2">{listing.description}</p>
-                <p className="text-sm font-semibold text-primary mt-3">
-                  {listing.price_per_request === 0 ? "Free" : `${listing.price_per_request.toFixed(4)} ETH/request`}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {featuredListings.length === 0 ? (
+          <div className="text-center py-12 border rounded-lg bg-background">
+            <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold">No Listings Yet</h3>
+            <p className="text-muted-foreground mt-1 max-w-sm mx-auto">
+              Be the first to list an AI model on the marketplace.
+            </p>
+            <Button className="mt-4" asChild>
+              <Link href="/dashboard/provider">List a Model</Link>
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {featuredListings.map((listing) => (
+              <Card key={listing.id} className="flex flex-col">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-lg leading-tight">{listing.name}</CardTitle>
+                    <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                      Model
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">by {listing.providerWallet}</p>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  <p className="text-sm text-muted-foreground line-clamp-2">{listing.description}</p>
+                  <p className="text-sm font-semibold text-primary mt-3">
+                    {listing.pricePerCallUsdc === 0 ? "Free" : `${listing.pricePerCallUsdc.toFixed(4)} USDC/call`}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="container mx-auto px-4 py-16">

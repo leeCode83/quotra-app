@@ -12,15 +12,7 @@ const WALLET_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Model type enum values
-const MODEL_TYPES = [
-  "chat",
-  "completion",
-  "embedding",
-  "image",
-  "audio",
-  "video",
-  "other",
-] as const;
+
 
 /**
  * Schema for provider registration
@@ -43,11 +35,12 @@ export const listingSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters long."),
   description: z.string().min(10, "Description must be at least 10 characters long."),
   model_name: z.string().min(1, "Model name is required."),
-  price_per_call_usdc: z.string().regex(/^\d+(\.\d+)?$/, "Price must be a valid USDC amount."),
-  max_calls: z.number().int().positive("max_calls must be a positive integer."),
-  max_input_chars: z.number().int().positive().default(2000),
-  max_completion_tokens: z.number().int().positive().default(500),
+  price_per_call_usdc: z.number().min(0.0001).max(1.00),
+  max_calls: z.number().int().min(10).max(100000),
+  max_input_chars: z.number().int().min(100).max(8000).default(2000),
+  max_completion_tokens: z.number().int().min(50).max(2000).default(500),
   expires_at: z.string().datetime({ offset: true }),
+  expiry_days: z.number().int().refine((v) => [7, 14, 30, 90].includes(v), "Expiry must be 7, 14, 30, or 90 days").optional(),
   delegation_id: z.string().min(1, "ERC-7710 delegation ID is required."),
   signed_delegation: z.record(z.string(), z.unknown()),
   encrypted_key: z.string().min(1, "Encrypted API key is required."),
@@ -121,3 +114,21 @@ export const x402PaymentSchema = z.object({
  * Inferred type from x402PaymentSchema
  */
 export type X402PaymentInput = z.infer<typeof x402PaymentSchema>;
+
+/**
+ * Schema for Gateway request validation
+ */
+export const gatewayRequestSchema = z.object({
+  model: z.string().min(1),
+  messages: z.array(z.object({
+    role: z.enum(["system", "user", "assistant"]),
+    content: z.string().min(1),
+  })).min(1).max(50),
+  temperature: z.number().min(0).max(2).optional().default(0.7),
+  max_tokens: z.number().int().positive().optional(),
+});
+
+/**
+ * Inferred type from gatewayRequestSchema
+ */
+export type GatewayRequestInput = z.infer<typeof gatewayRequestSchema>;

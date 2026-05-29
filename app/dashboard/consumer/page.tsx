@@ -28,7 +28,7 @@ export default function ConsumerDashboardPage() {
     queryKey: ["permissions"],
     queryFn: async () => {
       const supabase = createClient();
-      const { data, error } = await supabase.from("permissions").select("*");
+      const { data, error } = await supabase.from("consumer_permissions").select("*");
       if (error) throw error;
       return data;
     },
@@ -119,7 +119,7 @@ export default function ConsumerDashboardPage() {
 
   const totalSpent = transactions
     .filter((t) => t.status === "confirmed")
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    .reduce((sum, t: Transaction) => sum + parseFloat(t.amount_usdc || "0"), 0);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -150,7 +150,7 @@ export default function ConsumerDashboardPage() {
             <CardDescription>Total Spent</CardDescription>
             <CardTitle className="text-2xl flex items-center gap-1">
               <ArrowUpRight className="h-5 w-5 text-destructive" />
-              {totalSpent.toFixed(4)} ETH
+              {totalSpent.toFixed(4)} USDC
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -269,11 +269,11 @@ export default function ConsumerDashboardPage() {
                         {formatDate(tx.created_at)}
                       </p>
                       <p className="text-xs font-mono text-muted-foreground mt-1 line-clamp-1">
-                        {tx.tx_hash}
+                        {tx.payment_tx_hash}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="font-semibold text-primary">{formatPrice(parseFloat(tx.amount))}</p>
+                      <p className="font-semibold text-primary">{formatPrice(parseFloat(tx.amount_usdc || "0"))}</p>
                       <p className="text-xs text-muted-foreground">per request</p>
                     </div>
                   </div>

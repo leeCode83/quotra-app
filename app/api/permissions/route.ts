@@ -35,13 +35,15 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient();
 
-    let { data: consumer, error: consumerError } = await supabase
+    const { data: consumer } = await supabase
       .from("consumers")
       .select("id")
       .eq("wallet_address", walletAddress)
       .maybeSingle();
 
-    if (!consumer) {
+    let consumerId = consumer?.id;
+
+    if (!consumerId) {
       const { data: newConsumer, error: createError } = await supabase
         .from("consumers")
         .insert({ wallet_address: walletAddress })
@@ -54,8 +56,7 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
-
-      consumer = newConsumer;
+      consumerId = newConsumer.id;
     }
 
     const body = await request.json();
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     const { data: listing, error: listingError } = await supabase
       .from("listings")
-      .select("id, status")
+      .select("id, status, delegation_id")
       .eq("id", listing_id)
       .eq("status", "active")
       .single();
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     const { data: existingPerm } = await supabase
       .from("consumer_permissions")
       .select("id")
-      .eq("consumer_id", consumer.id)
+      .eq("consumer_id", consumerId)
       .eq("listing_id", listing_id)
       .maybeSingle();
 
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
       const { data: newPerm, error: insertError } = await supabase
         .from("consumer_permissions")
         .insert({
-          consumer_id: consumer.id,
+          consumer_id: consumerId,
           listing_id,
           erc7715_proof,
           expires_at,
@@ -132,17 +133,16 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await signJWT({
-      wallet_address: walletAddress,
-      consumer_id: consumer.id,
-      listing_id,
-      permission_id: permissionId,
+      consumerWallet: walletAddress,
+      delegationId: listing.delegation_id,
+      permissionId: permissionId,
     });
 
     return NextResponse.json({
-      success: true,
+      consumerToken: token,
+      endpoint: `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${listing.delegation_id}/chat`,
       permissionId,
       expiresAt: expires_at,
-      token,
     });
   } catch (err) {
     return NextResponse.json(

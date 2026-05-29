@@ -140,7 +140,7 @@ export function useProviderClaim(): UseProviderClaimReturn {
         // Calculate total claimed
         const totalClaimed = history
           .filter((c) => c.status === "claimed")
-          .reduce((sum, c) => sum + c.amount, 0);
+          .reduce((sum, c) => sum + c.amount_usdc, 0);
 
         // Real total earnings from confirmed transactions in Supabase
         const claimable = Math.max(0, Number(totalEarnings) * 0.9 - totalClaimed);
@@ -195,7 +195,7 @@ export function useProviderClaim(): UseProviderClaimReturn {
       const newClaim: ClaimHistory = {
         id: `claim_${Date.now()}`,
         provider_id: address,
-        amount: result.claimable_amount ?? claimableAmount,
+        amount_usdc: result.claimable_amount ?? claimableAmount,
         tx_hash: result.tx_hash ?? null,
         status: "claimed",
         created_at: new Date().toISOString(),
