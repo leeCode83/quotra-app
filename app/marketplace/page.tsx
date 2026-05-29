@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { Search, Filter, Grid3X3, List, Check } from "lucide-react";
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ListingCard } from "@/components/ListingCard";
 import { GrantPermissionButton } from "@/components/GrantPermissionButton";
+import { ConsumerTokenModal } from "@/components/ConsumerTokenModal";
 const SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Address;
 import { cn, formatPrice } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-client";
@@ -23,6 +24,7 @@ export default function MarketplacePage() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [modalData, setModalData] = useState<{ open: boolean; jwt: string; endpoint: string; expiresAt: string } | null>(null);
 
   const { isConnected } = useAccount();
   const queryClient = useQueryClient();
@@ -37,27 +39,36 @@ export default function MarketplacePage() {
     },
   });
 
-  const grantedListingIds = useMemo(() => {
-    if (typeof window === "undefined") return new Set<string>();
+  const [grantedListingIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
     const stored = localStorage.getItem("quotra_permissions");
-    if (!stored) return new Set<string>();
+    if (!stored) return new Set();
     try {
       const perms = JSON.parse(stored) as Array<{ listingId: string; jwt: string; expiresAt: string }>;
       const now = new Date().toISOString();
       const active = perms.filter((p) => p.expiresAt > now);
       return new Set(active.map((p) => p.listingId));
     } catch {
-      return new Set<string>();
+      return new Set();
     }
-  }, [isConnected]);
+  });
 
   const handlePermissionGranted = useCallback(
-    (listingId: string, result: { jwt: string; expiresAt: string }) => {
+    (listingId: string, delegationId: string | undefined, result: { jwt: string; expiresAt: string; permissionId?: string }) => {
       const stored = localStorage.getItem("quotra_permissions");
       const perms = stored ? JSON.parse(stored) : [];
       perms.push({ listingId, jwt: result.jwt, expiresAt: result.expiresAt });
       localStorage.setItem("quotra_permissions", JSON.stringify(perms));
       queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] });
+
+      // We need to infer delegation_id from the listing
+      const endpoint = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${delegationId || result.permissionId || "delegation-id"}/chat`;
+      setModalData({
+        open: true,
+        jwt: result.jwt,
+        endpoint,
+        expiresAt: result.expiresAt
+      });
     },
     [queryClient]
   );
@@ -182,7 +193,7 @@ export default function MarketplacePage() {
             ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
             : "flex flex-col gap-4"
         )}>
-          {filteredListings.map((listing) =>
+          {filteredListings.map((listing: ListingWithProvider) =>
             viewMode === "grid" ? (
               <div key={listing.id} className="flex flex-col gap-2">
                 <ListingCard listing={listing} />
@@ -195,7 +206,7 @@ export default function MarketplacePage() {
                     <GrantPermissionButton
                       listingId={listing.id}
                       sessionAccountAddress={SERVER_ACCOUNT}
-                      onSuccess={(result) => handlePermissionGranted(listing.id, result)}
+                      onSuccess={(result) => handlePermissionGranted(listing.id, listing.delegation_id ?? undefined, result)}
                     />
                   )
                 )}
@@ -228,7 +239,7 @@ export default function MarketplacePage() {
                         <GrantPermissionButton
                           listingId={listing.id}
                           sessionAccountAddress={SERVER_ACCOUNT}
-                          onSuccess={(result) => handlePermissionGranted(listing.id, result)}
+                          onSuccess={(result) => handlePermissionGranted(listing.id, listing.delegation_id ?? undefined, result)}
                         />
                       )}
                     </div>
@@ -238,6 +249,16 @@ export default function MarketplacePage() {
             )
           )}
         </div>
+      )}
+
+      {modalData && (
+        <ConsumerTokenModal
+          open={modalData.open}
+          onOpenChange={(open) => setModalData(prev => prev ? { ...prev, open } : null)}
+          jwt={modalData.jwt}
+          endpoint={modalData.endpoint}
+          expiresAt={modalData.expiresAt}
+        />
       )}
     </div>
   );

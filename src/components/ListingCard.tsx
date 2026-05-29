@@ -97,13 +97,13 @@ export function ListingCard({ listing, isLoading, error, className }: ListingCar
       </CardContent>
       <CardFooter className="gap-2">
         <Button variant="outline" size="sm" className="flex-1" asChild>
-          <Link href={`/marketplace?listing=${listing.id}`}>
+          <Link href={`/marketplace/${listing.id}`}>
             <Eye className="h-4 w-4 mr-1" />
             View
           </Link>
         </Button>
         <Button size="sm" className="flex-1" asChild>
-          <Link href={`/marketplace?listing=${listing.id}`}>
+          <Link href={`/marketplace/${listing.id}`}>
             <ExternalLink className="h-4 w-4 mr-1" />
             API
           </Link>

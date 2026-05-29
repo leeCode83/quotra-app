@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, Loader2, AlertCircle, Check, Wallet, LogIn, UserPlus,
+  Plus, Loader2, AlertCircle, Check, Wallet, LogIn,
   FileKey, List, ArrowRight, ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,21 +14,20 @@ import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@/lib/web3/provider";
 import { useAuth } from "@/lib/web3/auth";
 import { formatAddress } from "@/lib/utils";
-import type { Listing, Provider } from "@/types";
+import { EarningsPanel } from "@/components/EarningsPanel";
+import { TransactionHistory } from "@/components/TransactionHistory";
 
-const STEPS = ["Auth", "Register", "Delegation", "Create Listing"] as const;
-
+const STEPS = ["Auth", "Registration & Listing", "Sign Delegation"] as const;
 
 const emptyListingForm = {
   name: "",
-  description: "",
-  model_name: "",
-  price_per_call_usdc: "",
-  max_calls: 100,
-  max_input_chars: 2000,
-  max_completion_tokens: 500,
-  expires_at: "",
-  api_key: "",
+  modelName: "",
+  pricePerCallUsdc: 0.001,
+  maxCalls: 100,
+  maxInputChars: 2000,
+  maxCompletionTokens: 500,
+  expiryDays: 30,
+  veniceApiKey: "",
 };
 
 function StepIndicator({ current, steps }: { current: number; steps: readonly string[] }) {
@@ -58,126 +57,47 @@ export default function ProviderDashboardPage() {
   const { token, isLoading: authLoading, login } = useAuth();
   const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
-  const [providerData, setProviderData] = useState<Provider | null>(null);
-  const [regName, setRegName] = useState("");
-  const [delegation, setDelegation] = useState<{ id: string; signed: Record<string, unknown> } | null>(null);
-  const [delegating, setDelegating] = useState(false);
-  const [delegationError, setDelegationError] = useState<string | null>(null);
+  
   const [form, setForm] = useState(emptyListingForm);
-  const [encrypted, setEncrypted] = useState<{
-    encrypted_key: string;
-    key_iv: string;
-    key_auth_tag: string;
-  } | null>(null);
-  const [encrypting, setEncrypting] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
-  const { data: listings = [], isLoading: listLoading } = useQuery<Listing[]>({
-    queryKey: ["provider-listings", token],
+  const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
+    queryKey: ["provider-dashboard", token],
     queryFn: async () => {
-      const res = await fetch("/api/providers/me/listings", {
+      const res = await fetch("/api/provider/dashboard", {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (!res.ok) throw new Error("Failed to fetch listings");
-      const data = await res.json();
-      return data.listings ?? [];
+      if (!res.ok) {
+        if (res.status === 404) return null; // No provider yet
+        throw new Error("Failed to fetch dashboard");
+      }
+      return res.json();
     },
     enabled: !!token,
   });
 
-  const registerMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const res = await fetch("/api/providers/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ wallet_address: session.address, name }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "Registration failed");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      setStep(2);
-    },
-  });
+  const provider = dashboardData?.provider || null;
+  const listings = dashboardData?.listings || [];
+  const transactions = dashboardData?.transactions || [];
 
-  const createListingMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/listings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          provider_id: providerData!.id,
-          name: form.name,
-          description: form.description,
-          model_name: form.model_name,
-          price_per_call_usdc: form.price_per_call_usdc,
-          max_calls: form.max_calls,
-          max_input_chars: form.max_input_chars,
-          max_completion_tokens: form.max_completion_tokens,
-          expires_at: form.expires_at,
-          delegation_id: delegation!.id,
-          signed_delegation: delegation!.signed,
-          encrypted_key: encrypted!.encrypted_key,
-          key_iv: encrypted!.key_iv,
-          key_auth_tag: encrypted!.key_auth_tag,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "Failed to create listing");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["provider-listings"] });
-      setForm(emptyListingForm);
-      setEncrypted(null);
-      setStep(0);
-    },
-  });
-
-  const handleEncrypt = async () => {
-    if (!form.api_key) return;
-    setEncrypting(true);
-    try {
-      const res = await fetch("/api/listings/encrypt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: form.api_key }),
-      });
-      if (!res.ok) throw new Error("Encryption failed");
-      const data = await res.json();
-      setEncrypted(data);
-    } catch (err) {
-      console.error("Encrypt error:", err);
-    } finally {
-      setEncrypting(false);
-    }
-  };
-
-  const handleSignDelegation = useCallback(async () => {
+  const handleCombinedRegistration = useCallback(async () => {
     if (!window.ethereum) {
-      setDelegationError("MetaMask not detected");
+      setRegisterError("MetaMask not detected");
       return;
     }
-    setDelegating(true);
-    setDelegationError(null);
+    
+    setRegistering(true);
+    setRegisterError(null);
     try {
+      // Sign Delegation First
       const currentTime = Math.floor(Date.now() / 1000);
       const delegationMessage = JSON.stringify({
         type: "erc7710",
         delegator: session.address,
         delegate: process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "",
         chainId: 84532,
-        expiry: currentTime + 86400 * 30,
+        expiry: currentTime + 86400 * form.expiryDays,
         issuedAt: currentTime,
       });
 
@@ -187,17 +107,46 @@ export default function ProviderDashboardPage() {
         params: [delegationMessage, session.address],
       });
 
-      setDelegation({
-        id: `del_${session.address.toLowerCase()}_${currentTime}`,
-        signed: { message: delegationMessage, signature } as unknown as Record<string, unknown>,
+      const delegationId = `del_${session.address.toLowerCase()}_${currentTime}`;
+      const signedDelegation = { message: delegationMessage, signature };
+
+      // Submit Combined Payload
+      const payload = {
+        walletAddress: session.address,
+        veniceApiKey: form.veniceApiKey,
+        modelName: form.modelName,
+        pricePerCallUsdc: form.pricePerCallUsdc,
+        maxCalls: form.maxCalls,
+        maxInputChars: form.maxInputChars,
+        maxCompletionTokens: form.maxCompletionTokens,
+        expiryDays: form.expiryDays,
+        delegationId,
+        signedDelegation,
+      };
+
+      const res = await fetch("/api/provider/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
       });
-      setStep(3);
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "Registration failed");
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["provider-dashboard"] });
+      setForm(emptyListingForm);
+      setStep(0);
     } catch (err) {
-      setDelegationError(err instanceof Error ? err.message : "Delegation signing failed");
+      setRegisterError(err instanceof Error ? err.message : "Registration failed");
     } finally {
-      setDelegating(false);
+      setRegistering(false);
     }
-  }, [session.address]);
+  }, [form, session.address, token, queryClient]);
 
   if (!session.isConnected) {
     return (
@@ -238,9 +187,9 @@ export default function ProviderDashboardPage() {
         </Badge>
       </div>
 
-      <StepIndicator current={step} steps={STEPS} />
+      {step > 0 && <StepIndicator current={step} steps={STEPS} />}
 
-      {step === 0 && (
+      {step === 0 && !provider && (
         <Card>
           <CardHeader>
             <CardTitle>Authenticate</CardTitle>
@@ -264,8 +213,8 @@ export default function ProviderDashboardPage() {
             </div>
             {token && (
               <div className="flex justify-end">
-                <Button onClick={() => { setStep(1); setProviderData(null); }} size="sm">
-                  Continue <ArrowRight className="h-4 w-4 ml-1" />
+                <Button onClick={() => setStep(1)} size="sm">
+                  Register as Provider <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               </div>
             )}
@@ -276,35 +225,75 @@ export default function ProviderDashboardPage() {
       {step === 1 && (
         <Card>
           <CardHeader>
-            <CardTitle>Register Provider</CardTitle>
-            <CardDescription>Register as a provider on the Quotra marketplace</CardDescription>
+            <CardTitle>Register & Create Listing</CardTitle>
+            <CardDescription>Register as a provider and setup your first AI model listing</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2">
-              <Label htmlFor="regName">Provider Name</Label>
-              <Input
-                id="regName"
-                value={regName}
-                onChange={(e) => setRegName(e.target.value)}
-                placeholder="My AI Services"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Provider Name</Label>
+                <Input id="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="My AI Services" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="modelName">Model Name</Label>
+                <Input id="modelName" value={form.modelName} onChange={(e) => setForm({ ...form, modelName: e.target.value })} placeholder="gpt-4o-mini" />
+              </div>
             </div>
-            <div className="flex justify-between">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="price">Price per Call (USDC)</Label>
+                <Input id="price" type="number" step="0.0001" value={form.pricePerCallUsdc} onChange={(e) => setForm({ ...form, pricePerCallUsdc: Number(e.target.value) })} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="maxCalls">Max Calls</Label>
+                <Input id="maxCalls" type="number" value={form.maxCalls} onChange={(e) => setForm({ ...form, maxCalls: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="maxInputChars">Max Input Chars</Label>
+                <Input id="maxInputChars" type="number" value={form.maxInputChars} onChange={(e) => setForm({ ...form, maxInputChars: Number(e.target.value) })} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="maxCompletionTokens">Max Completion Tokens</Label>
+                <Input id="maxCompletionTokens" type="number" value={form.maxCompletionTokens} onChange={(e) => setForm({ ...form, maxCompletionTokens: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="expiryDays">Expiry (Days)</Label>
+              <select 
+                id="expiryDays"
+                className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={form.expiryDays}
+                onChange={(e) => setForm({ ...form, expiryDays: Number(e.target.value) })}
+              >
+                <option value={7}>7 Days</option>
+                <option value={14}>14 Days</option>
+                <option value={30}>30 Days</option>
+                <option value={90}>90 Days</option>
+              </select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="veniceApiKey">Venice AI API Key</Label>
+              <Input id="veniceApiKey" type="password" value={form.veniceApiKey} onChange={(e) => setForm({ ...form, veniceApiKey: e.target.value })} placeholder="sk-..." />
+            </div>
+            
+            {registerError && (
+              <p className="text-sm text-destructive">{registerError}</p>
+            )}
+
+            <div className="flex justify-between pt-4">
               <Button variant="outline" onClick={() => setStep(0)} size="sm">
                 <ArrowLeft className="h-4 w-4 mr-1" /> Back
               </Button>
               <Button
-                onClick={() => registerMutation.mutate(regName)}
-                disabled={registerMutation.isPending || regName.length < 3}
+                onClick={() => setStep(2)}
+                disabled={!form.name || !form.modelName || !form.veniceApiKey}
                 size="sm"
               >
-                {registerMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                <UserPlus className="h-4 w-4 mr-1" /> Register
+                Continue <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
-            {registerMutation.isError && (
-              <p className="text-sm text-destructive">{(registerMutation.error as Error).message}</p>
-            )}
           </CardContent>
         </Card>
       )}
@@ -318,171 +307,92 @@ export default function ProviderDashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {delegation ? (
-              <div className="p-3 border rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2 text-sm">
-                  <Check className="h-4 w-4 text-primary" />
-                  <span className="font-medium">Delegation signed</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1 font-mono break-all">{delegation.id}</p>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                You will be prompted by your wallet to sign a delegation permission.
-              </p>
-            )}
-            {delegationError && (
-              <p className="text-sm text-destructive">{delegationError}</p>
+            <p className="text-sm text-muted-foreground">
+              You will be prompted by your wallet to sign a delegation permission. This completes your registration and activates your listing.
+            </p>
+            {registerError && (
+              <p className="text-sm text-destructive">{registerError}</p>
             )}
             <div className="flex justify-between">
               <Button variant="outline" onClick={() => setStep(1)} size="sm">
                 <ArrowLeft className="h-4 w-4 mr-1" /> Back
               </Button>
-              {!delegation ? (
-                <Button onClick={handleSignDelegation} disabled={delegating} size="sm">
-                  {delegating && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                  <FileKey className="h-4 w-4 mr-1" /> Sign Delegation
-                </Button>
-              ) : (
-                <Button onClick={() => setStep(3)} size="sm">
-                  Continue <ArrowRight className="h-4 w-4 ml-1" />
-                </Button>
-              )}
+              <Button onClick={handleCombinedRegistration} disabled={registering} size="sm">
+                {registering && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                <FileKey className="h-4 w-4 mr-1" /> Sign & Register
+              </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {step === 3 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Create Listing</CardTitle>
-            <CardDescription>Add a new AI model to the marketplace</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="GPT-4o Mini" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="model_name">Model Name</Label>
-                <Input id="model_name" value={form.model_name} onChange={(e) => setForm({ ...form, model_name: e.target.value })} placeholder="gpt-4o-mini" />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
-              <textarea id="description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Describe your model..." className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="price">Price per Call (USDC)</Label>
-                <Input id="price" type="number" step="0.0001" value={form.price_per_call_usdc} onChange={(e) => setForm({ ...form, price_per_call_usdc: e.target.value })} placeholder="0.001" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="max_calls">Max Calls</Label>
-                <Input id="max_calls" type="number" value={form.max_calls} onChange={(e) => setForm({ ...form, max_calls: Number(e.target.value) })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="max_input_chars">Max Input Chars</Label>
-                <Input id="max_input_chars" type="number" value={form.max_input_chars} onChange={(e) => setForm({ ...form, max_input_chars: Number(e.target.value) })} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="max_completion_tokens">Max Completion Tokens</Label>
-                <Input id="max_completion_tokens" type="number" value={form.max_completion_tokens} onChange={(e) => setForm({ ...form, max_completion_tokens: Number(e.target.value) })} />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="expires_at">Expires At</Label>
-              <Input id="expires_at" type="datetime-local" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="api_key">API Key</Label>
-              <div className="flex gap-2">
-                <Input id="api_key" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
-                {!encrypted ? (
-                  <Button variant="outline" onClick={handleEncrypt} disabled={encrypting || !form.api_key}>
-                    {encrypting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Encrypt"}
-                  </Button>
-                ) : (
-                  <Badge variant="success" className="px-3"><Check className="h-4 w-4 mr-1" /> Encrypted</Badge>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={() => setStep(2)} size="sm">
-                <ArrowLeft className="h-4 w-4 mr-1" /> Back
-              </Button>
-              <Button
-                onClick={() => createListingMutation.mutate()}
-                disabled={createListingMutation.isPending || !form.name || !form.model_name || !form.price_per_call_usdc || !form.expires_at || !encrypted || !delegation}
-                size="sm"
-              >
-                {createListingMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                <Plus className="h-4 w-4 mr-1" /> Create Listing
-              </Button>
-            </div>
-            {createListingMutation.isError && (
-              <p className="text-sm text-destructive">{(createListingMutation.error as Error).message}</p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="mt-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">Your Listings</h2>
-          {token && (
-            <Button size="sm" variant="outline" onClick={() => setStep(1)}>
-              <Plus className="h-4 w-4 mr-1" /> New Listing
-            </Button>
-          )}
-        </div>
-        {listLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i}><CardContent className="py-6"><div className="h-6 w-48 bg-muted rounded animate-pulse" /></CardContent></Card>
-            ))}
+      {/* DASHBOARD CONTENT (if provider exists) */}
+      {provider && step === 0 && (
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-2">
+             <EarningsPanel 
+               pendingEarnings={provider.pendingEarningsUsdc}
+               totalEarned={provider.totalEarnedUsdc}
+             />
           </div>
-        ) : listings.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <List className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold">No Listings Yet</h3>
-              <p className="text-muted-foreground mt-1">Create your first listing to get started.</p>
-              {token && (
-                <Button className="mt-4" onClick={() => setStep(1)}>
-                  <Plus className="h-4 w-4 mr-2" /> Create Listing
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {listings.map((listing) => (
-              <Card key={listing.id}>
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{listing.name}</span>
-                        <Badge variant={listing.status === "active" ? "success" : "secondary"} className="text-xs">
-                          {listing.status}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {listing.model_name} &middot; ${listing.price_per_call_usdc}/call &middot; {listing.remaining_calls}/{listing.max_calls} left
-                      </p>
-                    </div>
-                  </div>
+
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Your Listings</h2>
+              <Button size="sm" variant="outline" onClick={() => setStep(1)}>
+                <Plus className="h-4 w-4 mr-1" /> New Listing
+              </Button>
+            </div>
+            
+            {dashboardLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i}><CardContent className="py-6"><div className="h-6 w-48 bg-muted rounded animate-pulse" /></CardContent></Card>
+                ))}
+              </div>
+            ) : listings.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <List className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold">No Listings Yet</h3>
+                  <p className="text-muted-foreground mt-1">Create your first listing to get started.</p>
+                  {token && (
+                    <Button className="mt-4" onClick={() => setStep(1)}>
+                      <Plus className="h-4 w-4 mr-2" /> Create Listing
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
-            ))}
+            ) : (
+              <div className="space-y-3">
+                {listings.map((listing: Record<string, unknown> & { id: string, name: string, status: string, modelName: string, pricePerCallUsdc: number, remainingCalls: number, maxCalls: number }) => (
+                  <Card key={listing.id}>
+                    <CardContent className="py-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{listing.name}</span>
+                            <Badge variant={listing.status === "active" ? "success" : "secondary"} className="text-xs">
+                              {listing.status}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {listing.modelName} &middot; ${listing.pricePerCallUsdc}/call &middot; {listing.remainingCalls}/{listing.maxCalls} left
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="mt-8">
+            <TransactionHistory transactions={transactions} title="Provider Transactions" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

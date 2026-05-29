@@ -8,6 +8,7 @@ export interface EscrowStats {
 
 export interface Provider {
   id: string;
+  name?: string;
   wallet_address: string;
   pending_earnings_usdc: string | null;
   total_earned_usdc: string | null;
@@ -50,12 +51,13 @@ export interface ConsumerPermission {
   consumer_id: string;
   listing_id: string;
   session_key: string;
+  status: string;
   permissions_json: Record<string, unknown>;
   expires_at: string | null;
   created_at: string;
 }
 
-export type TransactionStatus = "pending" | "confirmed" | "failed" | "refunded";
+export type TransactionStatus = "pending" | "completed" | "confirmed" | "failed" | "refunded";
 
 export interface Transaction {
   id: string;

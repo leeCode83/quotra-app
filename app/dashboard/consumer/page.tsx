@@ -1,28 +1,29 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertCircle, Wallet, Key, Clock, ArrowUpRight, ExternalLink,
+  AlertCircle, Wallet, Key, Clock, ArrowUpRight, ExternalLink, ShieldAlert
 } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWallet, useConsumerAuth } from "@/lib/web3/provider";
-import { cn, formatAddress, formatPrice, formatDate } from "@/lib/utils";
+import { formatAddress, formatDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-client";
+import { TransactionHistory, Transaction as TxProp } from "@/components/TransactionHistory";
+import { RevokeDialog } from "@/components/RevokeDialog";
 import type { ConsumerPermission, Transaction, Listing } from "@/types";
-
-const statusColors: Record<string, string> = {
-  confirmed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
-  failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-  refunded: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300",
-};
 
 export default function ConsumerDashboardPage() {
   const { session, isWrongChain, disconnect } = useWallet();
   useConsumerAuth();
+  const queryClient = useQueryClient();
+
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokePermId, setRevokePermId] = useState<string | null>(null);
 
   const { data: permissions = [], isLoading: permsLoading, error: permsError } = useQuery<ConsumerPermission[]>({
     queryKey: ["permissions"],
@@ -53,6 +54,18 @@ export default function ConsumerDashboardPage() {
       return data;
     },
   });
+
+  const handleRevokeConfirm = async () => {
+    if (!revokePermId) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("consumer_permissions")
+      .update({ status: "revoked" })
+      .eq("id", revokePermId);
+      
+    if (error) throw new Error(error.message);
+    queryClient.invalidateQueries({ queryKey: ["permissions"] });
+  };
 
   if (!session.isConnected) {
     return (
@@ -118,8 +131,20 @@ export default function ConsumerDashboardPage() {
   }
 
   const totalSpent = transactions
-    .filter((t) => t.status === "confirmed")
+    .filter((t) => t.status === "completed") // Note: updated from 'confirmed' to 'completed' based on DB enum
     .reduce((sum, t: Transaction) => sum + parseFloat(t.amount_usdc || "0"), 0);
+
+  const activePermissions = permissions.filter(p => p.status === "active");
+
+  const formattedTransactions: TxProp[] = transactions.map(tx => ({
+    id: tx.id,
+    txHash: tx.payment_tx_hash,
+    amountUsdc: tx.amount_usdc,
+    modelName: listings.find(l => l.id === tx.listing_id)?.model_name || "Unknown",
+    status: tx.status as "pending" | "completed" | "refund_pending" | "refunded",
+    timestamp: tx.created_at,
+    completedAt: tx.completed_at
+  }));
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -139,7 +164,7 @@ export default function ConsumerDashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Active Permissions</CardDescription>
-            <CardTitle className="text-2xl">{permissions.length}</CardTitle>
+            <CardTitle className="text-2xl">{activePermissions.length}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">API keys with access</p>
@@ -164,7 +189,7 @@ export default function ConsumerDashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              {transactions.filter((t) => t.status === "confirmed").length} confirmed
+              {transactions.filter((t) => t.status === "completed").length} completed
             </p>
           </CardContent>
         </Card>
@@ -186,7 +211,7 @@ export default function ConsumerDashboardPage() {
                   Purchase access to an AI model from the marketplace to get started.
                 </p>
                 <Button className="mt-4" asChild>
-                  <a href="/marketplace">Browse Marketplace</a>
+                  <Link href="/marketplace">Browse Marketplace</Link>
                 </Button>
               </CardContent>
             </Card>
@@ -194,6 +219,7 @@ export default function ConsumerDashboardPage() {
             permissions.map((perm) => {
               const listing = listings.find((l) => l.id === perm.listing_id);
               const isExpired = perm.expires_at ? new Date(perm.expires_at) < new Date() : false;
+              const isRevoked = perm.status === "revoked";
               return (
                 <Card key={perm.id}>
                   <CardContent className="py-4">
@@ -201,8 +227,8 @@ export default function ConsumerDashboardPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold">{listing?.name ?? `Listing #${perm.listing_id}`}</h3>
-                          <Badge variant={isExpired ? "destructive" : "success"} className="text-xs">
-                            {isExpired ? "Expired" : "Active"}
+                          <Badge variant={isRevoked ? "secondary" : isExpired ? "destructive" : "success"} className="text-xs">
+                            {isRevoked ? "Revoked" : isExpired ? "Expired" : "Active"}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
@@ -217,17 +243,20 @@ export default function ConsumerDashboardPage() {
                             </span>
                           )}
                         </div>
-                        {perm.permissions_json && (
-                          <div className="flex gap-2 mt-2">
-                            {Object.entries(perm.permissions_json).map(([key, value]) => (
-                              <Badge key={key} variant="outline" className="text-xs">
-                                {key}: {String(value)}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        {!isRevoked && !isExpired && (
+                          <Button 
+                            variant="destructive" 
+                            size="sm" 
+                            onClick={() => {
+                              setRevokePermId(perm.id);
+                              setRevokeOpen(true);
+                            }}
+                          >
+                            <ShieldAlert className="h-4 w-4 mr-1" /> Revoke
+                          </Button>
+                        )}
                         {listing?.endpoint_url && (
                           <Button variant="outline" size="sm" asChild>
                             <a href={listing.endpoint_url} target="_blank" rel="noopener noreferrer">
@@ -245,44 +274,15 @@ export default function ConsumerDashboardPage() {
         </TabsContent>
 
         <TabsContent value="transactions" className="space-y-4">
-          {transactions.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">No transactions yet.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            transactions.map((tx) => (
-              <Card key={tx.id}>
-                <CardContent className="py-4">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold">
-                          {listings.find((l) => l.id === tx.listing_id)?.name ?? `Listing #${tx.listing_id}`}
-                        </h3>
-                        <Badge className={cn("text-xs", statusColors[tx.status] ?? "")}>
-                          {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {formatDate(tx.created_at)}
-                      </p>
-                      <p className="text-xs font-mono text-muted-foreground mt-1 line-clamp-1">
-                        {tx.payment_tx_hash}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="font-semibold text-primary">{formatPrice(parseFloat(tx.amount_usdc || "0"))}</p>
-                      <p className="text-xs text-muted-foreground">per request</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
+          <TransactionHistory transactions={formattedTransactions} title="Your Transactions" />
         </TabsContent>
       </Tabs>
+
+      <RevokeDialog 
+        open={revokeOpen} 
+        onOpenChange={setRevokeOpen} 
+        onConfirm={handleRevokeConfirm} 
+      />
     </div>
   );
 }

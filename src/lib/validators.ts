@@ -12,8 +12,7 @@ const WALLET_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Model type enum values
-
-
+import { isValidVeniceModel } from "@/lib/venice/models";
 /**
  * Schema for provider registration
  */
@@ -26,6 +25,27 @@ export const providerRegistrationSchema = z.object({
  * Inferred type from providerRegistrationSchema
  */
 export type ProviderRegistration = z.infer<typeof providerRegistrationSchema>;
+
+/**
+ * Schema for combined provider registration and listing creation
+ */
+export const providerFullRegistrationSchema = z.object({
+  walletAddress: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format."),
+  veniceApiKey: z.string().min(10, "Venice AI API key required"),
+  modelName: z.string().min(1).refine(isValidVeniceModel, "Unsupported Venice AI model"),
+  pricePerCallUsdc: z.number().min(0.0001).max(1.00),
+  maxCalls: z.number().int().min(10).max(100000),
+  maxInputChars: z.number().int().min(100).max(8000).default(2000),
+  maxCompletionTokens: z.number().int().min(50).max(2000).default(500),
+  expiryDays: z.number().int().refine((v) => [7, 14, 30, 90].includes(v), "Expiry must be 7, 14, 30, or 90 days"),
+  delegationId: z.string().min(1, "ERC-7710 delegation ID is required."),
+  signedDelegation: z.record(z.string(), z.unknown()),
+});
+
+/**
+ * Inferred type from providerFullRegistrationSchema
+ */
+export type ProviderFullRegistration = z.infer<typeof providerFullRegistrationSchema>;
 
 /**
  * Schema for creating/updating a listing
