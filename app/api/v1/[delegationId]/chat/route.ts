@@ -3,9 +3,10 @@ import { gatewayRequestSchema } from "@/lib/validators";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { delegationId: string } }
+  { params }: { params: Promise<{ delegationId: string }> }
 ) {
   try {
+    const resolvedParams = await params;
     const body = await request.json();
     const parseResult = gatewayRequestSchema.safeParse(body);
 
@@ -25,7 +26,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       message: "Gateway routing ready for Category 1 implementation",
-      delegationId: params.delegationId,
+      delegationId: resolvedParams.delegationId,
       body: parseResult.data,
     });
   } catch (err) {
