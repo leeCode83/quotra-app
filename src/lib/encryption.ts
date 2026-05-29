@@ -46,7 +46,7 @@ async function getEncryptionKey(): Promise<CryptoKey> {
 
     return await crypto.subtle.importKey(
       "raw",
-      keyBytes,
+      keyBytes as unknown as BufferSource,
       {
         name: ALGORITHM,
         length: KEY_LENGTH,
@@ -80,10 +80,10 @@ export async function encrypt(
     const encryptedBuffer = await crypto.subtle.encrypt(
       {
         name: ALGORITHM,
-        iv: iv,
+        iv: iv as unknown as BufferSource,
       },
       key,
-      encodedData
+      encodedData as unknown as BufferSource
     );
 
     // Web Crypto appends the 16-byte authentication tag to the ciphertext
@@ -130,10 +130,10 @@ export async function decrypt(
     const decryptedBuffer = await crypto.subtle.decrypt(
       {
         name: ALGORITHM,
-        iv: ivBytes,
+        iv: ivBytes as unknown as BufferSource,
       },
       key,
-      combinedBytes
+      combinedBytes as unknown as BufferSource
     );
 
     const decoder = new TextDecoder();

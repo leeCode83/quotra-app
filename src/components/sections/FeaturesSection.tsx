@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { Zap } from "lucide-react";
+
 import { Reveal } from "@/components/animated/Reveal";
 import { FeaturesShaderCards } from "@/components/ui/feature-shader-cards";
 
