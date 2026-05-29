@@ -18,13 +18,13 @@ export function EarningsPanel({ pendingEarnings, totalEarned, onWithdraw }: Earn
   const handleWithdraw = async () => {
     setIsWithdrawing(true)
     if (onWithdraw) {
-      await onWithdraw()
+      try {
+        await onWithdraw()
+      } catch (err) {
+        console.error(err)
+      }
     }
-    // Simulate withdraw for PoC
-    setTimeout(() => {
-      setIsWithdrawing(false)
-      alert("Withdrawal requested! (Mock implementation)")
-    }, 1000)
+    setIsWithdrawing(false)
   }
 
   const pending = typeof pendingEarnings === 'string' ? parseFloat(pendingEarnings) : pendingEarnings;

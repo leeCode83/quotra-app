@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/web3/auth";
 import { formatAddress } from "@/lib/utils";
 import { EarningsPanel } from "@/components/EarningsPanel";
 import { TransactionHistory } from "@/components/TransactionHistory";
+import { useProviderClaim } from "@/hooks/useProviderClaim";
 
 const STEPS = ["Auth", "Registration & Listing", "Sign Delegation"] as const;
 
@@ -61,6 +62,8 @@ export default function ProviderDashboardPage() {
   const [form, setForm] = useState(emptyListingForm);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
+
+  const { claim, claimStatus } = useProviderClaim();
 
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
     queryKey: ["provider-dashboard", token],
@@ -333,6 +336,10 @@ export default function ProviderDashboardPage() {
              <EarningsPanel 
                pendingEarnings={provider.pendingEarningsUsdc}
                totalEarned={provider.totalEarnedUsdc}
+               onWithdraw={async () => {
+                 await claim();
+                 queryClient.invalidateQueries({ queryKey: ["provider-dashboard"] });
+               }}
              />
           </div>
 
