@@ -1,5 +1,3 @@
-// Supabase Database type placeholder — replace with generated types from your Supabase project
-// Run: npx supabase gen types typescript --project-id <your-project-id> > src/types/supabase.ts
 export type SupabaseDatabase = Record<string, never>;
 
 export interface EscrowStats {
@@ -12,6 +10,8 @@ export interface Provider {
   id: string;
   wallet_address: string;
   name: string;
+  pending_earnings_usdc: string | null;
+  total_earned_usdc: string | null;
   encrypted_api_key: string | null;
   delegation_json: Record<string, unknown> | null;
   created_at: string;
@@ -22,10 +22,20 @@ export interface Listing {
   provider_id: string;
   name: string;
   description: string | null;
-  model_type: string;
-  price_per_request: number;
-  endpoint_url: string;
-  is_active: boolean;
+  model_name: string;
+  price_per_call_usdc: string;
+  max_calls: number;
+  remaining_calls: number;
+  max_input_chars: number;
+  max_completion_tokens: number;
+  status: string;
+  expires_at: string;
+  delegation_id: string | null;
+  signed_delegation: Record<string, unknown> | null;
+  encrypted_key: string | null;
+  key_iv: string | null;
+  key_auth_tag: string | null;
+  endpoint_url: string | null;
   created_at: string;
 }
 
@@ -53,7 +63,7 @@ export interface Transaction {
   listing_id: string;
   consumer_id: string;
   tx_hash: string;
-  amount: number;
+  amount: string;
   status: TransactionStatus;
   created_at: string;
 }
@@ -69,7 +79,6 @@ export interface ClaimHistory {
   created_at: string;
 }
 
-// Extended types with relations for the UI
 export interface ListingWithProvider extends Listing {
   provider: Provider | null;
 }
@@ -78,7 +87,6 @@ export interface TransactionWithListing extends Transaction {
   listing: Listing | null;
 }
 
-// API Gateway types
 export interface JwtPayload {
   wallet_address: string;
   consumer_id: string;
@@ -95,25 +103,24 @@ export interface X402Payment {
   signature: string;
 }
 
-// Wallet session types
 export interface WalletSession {
   address: string;
   chainId: number;
   isConnected: boolean;
 }
 
-// Provider registration form
 export interface ProviderRegistrationForm {
   name: string;
-  apiKey: string;
-  wallet_address: string;
 }
 
-// Listing creation form
 export interface ListingForm {
   name: string;
   description: string;
-  model_type: string;
-  price_per_request: string;
-  endpoint_url: string;
+  model_name: string;
+  price_per_call_usdc: string;
+  max_calls: number;
+  max_input_chars: number;
+  max_completion_tokens: number;
+  expires_at: string;
+  api_key: string;
 }

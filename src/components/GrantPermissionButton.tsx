@@ -15,7 +15,7 @@ declare global {
 interface GrantPermissionButtonProps {
   listingId: string
   sessionAccountAddress: Address
-  onSuccess?: (result: { permissionId: string; expiresAt: string }) => void
+  onSuccess?: (result: { permissionId: string; expiresAt: string; jwt: string }) => void
 }
 
 export function GrantPermissionButton({
@@ -74,7 +74,7 @@ export function GrantPermissionButton({
       }
 
       const data = await res.json();
-      onSuccess?.({ permissionId: data.permissionId, expiresAt: data.expiresAt });
+      onSuccess?.({ permissionId: data.permissionId, expiresAt: data.expiresAt, jwt: data.token });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to grant permission")
     } finally {

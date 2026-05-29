@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { verifyJWT } from "@/lib/jwt";
+import { verifyJWT, signJWT } from "@/lib/jwt";
 
 function getAuthToken(request: NextRequest): string | null {
   const authHeader = request.headers.get("authorization");
@@ -35,17 +35,27 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient();
 
-    const { data: consumer, error: consumerError } = await supabase
+    let { data: consumer, error: consumerError } = await supabase
       .from("consumers")
       .select("id")
       .eq("wallet_address", walletAddress)
-      .single();
+      .maybeSingle();
 
-    if (consumerError || !consumer) {
-      return NextResponse.json(
-        { error: "Consumer not found" },
-        { status: 404 }
-      );
+    if (!consumer) {
+      const { data: newConsumer, error: createError } = await supabase
+        .from("consumers")
+        .insert({ wallet_address: walletAddress })
+        .select("id")
+        .single();
+
+      if (createError || !newConsumer) {
+        return NextResponse.json(
+          { error: "Failed to register consumer", details: createError?.message },
+          { status: 500 }
+        );
+      }
+
+      consumer = newConsumer;
     }
 
     const body = await request.json();
@@ -79,7 +89,10 @@ export async function POST(request: NextRequest) {
       .eq("listing_id", listing_id)
       .maybeSingle();
 
+    let permissionId: string;
+
     if (existingPerm) {
+      permissionId = existingPerm.id;
       const { error: updateError } = await supabase
         .from("consumer_permissions")
         .update({
@@ -87,7 +100,7 @@ export async function POST(request: NextRequest) {
           expires_at,
           status: "active",
         })
-        .eq("id", existingPerm.id);
+        .eq("id", permissionId);
 
       if (updateError) {
         return NextResponse.json(
@@ -95,28 +108,42 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
+    } else {
+      const { data: newPerm, error: insertError } = await supabase
+        .from("consumer_permissions")
+        .insert({
+          consumer_id: consumer.id,
+          listing_id,
+          erc7715_proof,
+          expires_at,
+          status: "active",
+        })
+        .select("id")
+        .single();
 
-      return NextResponse.json({ success: true, created: false });
+      if (insertError || !newPerm) {
+        return NextResponse.json(
+          { error: "Failed to create permission", details: insertError?.message },
+          { status: 500 }
+        );
+      }
+
+      permissionId = newPerm.id;
     }
 
-    const { error: insertError } = await supabase
-      .from("consumer_permissions")
-      .insert({
-        consumer_id: consumer.id,
-        listing_id,
-        erc7715_proof,
-        expires_at,
-        status: "active",
-      });
+    const token = await signJWT({
+      wallet_address: walletAddress,
+      consumer_id: consumer.id,
+      listing_id,
+      permission_id: permissionId,
+    });
 
-    if (insertError) {
-      return NextResponse.json(
-        { error: "Failed to create permission", details: insertError.message },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ success: true, created: true }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      permissionId,
+      expiresAt: expires_at,
+      token,
+    });
   } catch (err) {
     return NextResponse.json(
       {

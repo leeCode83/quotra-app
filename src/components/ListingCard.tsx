@@ -61,38 +61,12 @@ export function ListingCard({ listing, isLoading, error, className }: ListingCar
     return null;
   }
 
-  const modelTypeColors = {
-    "text-generation": "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-    "image-generation": "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
-    "embedding": "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-    "speech": "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
-    "multimodal": "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300",
-  } as const;
-
-  const modelTypeLabel = {
-    "text-generation": "Text Gen",
-    "image-generation": "Image Gen",
-    "embedding": "Embedding",
-    "speech": "Speech",
-    "multimodal": "Multimodal",
-  } as const;
-
-  type ModelType = keyof typeof modelTypeColors;
-
-  function getModelTypeColor(type: string): string {
-    return modelTypeColors[type as ModelType] ?? "";
-  }
-
-  function getModelTypeLabel(type: string): string {
-    return modelTypeLabel[type as ModelType] ?? type;
-  }
-
   return (
     <Card className={cn("h-full flex flex-col transition-shadow hover:shadow-md", className)}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-lg leading-tight line-clamp-2">{listing.name}</CardTitle>
-          {listing.is_active ? (
+          {listing.status === "active" ? (
             <Badge variant="success" className="shrink-0">Active</Badge>
           ) : (
             <Badge variant="secondary" className="shrink-0">Inactive</Badge>
@@ -109,16 +83,16 @@ export function ListingCard({ listing, isLoading, error, className }: ListingCar
           <p className="text-sm text-muted-foreground line-clamp-2">{listing.description}</p>
         )}
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge
-            variant="outline"
-            className={cn("text-xs", getModelTypeColor(listing.model_type))}
-          >
+          <Badge variant="outline" className="text-xs">
             <Cpu className="h-3 w-3 mr-1" />
-            {getModelTypeLabel(listing.model_type)}
+            {listing.model_name}
           </Badge>
           <span className="text-sm font-semibold text-primary">
-            {formatPrice(listing.price_per_request)}
+            ${formatPrice(parseFloat(listing.price_per_call_usdc))}
           </span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>{listing.remaining_calls}/{listing.max_calls} calls left</span>
         </div>
       </CardContent>
       <CardFooter className="gap-2">
@@ -129,10 +103,10 @@ export function ListingCard({ listing, isLoading, error, className }: ListingCar
           </Link>
         </Button>
         <Button size="sm" className="flex-1" asChild>
-          <a href={listing.endpoint_url} target="_blank" rel="noopener noreferrer">
+          <Link href={`/marketplace?listing=${listing.id}`}>
             <ExternalLink className="h-4 w-4 mr-1" />
             API
-          </a>
+          </Link>
         </Button>
       </CardFooter>
     </Card>

@@ -84,7 +84,7 @@ async function delegationHandler(request: NextRequest): Promise<NextResponse> {
     .from("listings")
     .select("*, provider:providers(*)")
     .eq("id", payload.listing_id)
-    .eq("is_active", true)
+    .eq("status", "active")
     .single();
 
   if (listingError || !listing) {
@@ -123,7 +123,7 @@ async function delegationHandler(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const baseEndpoint = listingWithProvider.endpoint_url.replace(/\/+$/, "");
+  const baseEndpoint = listingWithProvider.endpoint_url!.replace(/\/+$/, "");
   const targetUrl = `${baseEndpoint}${targetPath}`;
 
   const proxyHeaders = new Headers();
@@ -282,7 +282,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     .from("listings")
     .select("*, provider:providers(*)")
     .eq("id", payload.listing_id)
-    .eq("is_active", true)
+    .eq("status", "active")
     .single();
 
   if (listingError || !listing) {
@@ -321,7 +321,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const baseEndpoint = listingWithProvider.endpoint_url.replace(/\/+$/, "");
+  const baseEndpoint = listingWithProvider.endpoint_url!.replace(/\/+$/, "");
   const targetUrl = `${baseEndpoint}${targetPath}`;
 
   const proxyHeaders = new Headers();

@@ -119,7 +119,7 @@ export default function ConsumerDashboardPage() {
 
   const totalSpent = transactions
     .filter((t) => t.status === "confirmed")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -228,7 +228,7 @@ export default function ConsumerDashboardPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        {listing && (
+                        {listing?.endpoint_url && (
                           <Button variant="outline" size="sm" asChild>
                             <a href={listing.endpoint_url} target="_blank" rel="noopener noreferrer">
                               <ExternalLink className="h-4 w-4 mr-1" /> API
@@ -273,7 +273,7 @@ export default function ConsumerDashboardPage() {
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="font-semibold text-primary">{formatPrice(tx.amount)}</p>
+                      <p className="font-semibold text-primary">{formatPrice(parseFloat(tx.amount))}</p>
                       <p className="text-xs text-muted-foreground">per request</p>
                     </div>
                   </div>
