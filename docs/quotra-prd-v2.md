@@ -312,7 +312,7 @@ Blockchain is the trust anchor (provider signed delegation = provider consented)
 5. Consumer approves in MetaMask — this is the session authorization grant
 6. Frontend sends ERC-7715 proof + wallet address + delegationId to `/api/consumer/permission`
 7. Server verifies ERC-7715 proof is valid for this consumer + listing
-8. Server inserts row into `consumer_permissions` table (status: active, expires_at: 24h)
+8. Server auto-creates consumer record if not exists, then upserts row into `consumer_permissions` table (UPDATE if exists, INSERT if not, status: active, expires_at: 24h) ✅
 9. Server generates signed JWT:
    ```json
    {
@@ -603,8 +603,7 @@ Consumer (app/code)
 | **Wagmi** | React hooks for wallet state | Built on Viem ✅ |
 | **ERC-7710** | On-chain delegation (authorization layer) | Provider signs once; gateway redeems |
 | **ERC-7715** | Consumer session permission grant | One-time per listing per consumer |
-| **x402 Protocol** (`x402-next`) | HTTP-native per-call USDC payment | Intercept in Next.js API Route |
-| **Coinbase x402 Facilitator** (`@coinbase/x402`) | Payment verify + settle | `POST /v2/x402/verify` called in gateway |
+| **x402 Protocol** (`@x402/next`, `@x402/core`) | HTTP-native per-call USDC payment | Intercept in Next.js API Route via `withX402` wrapper and `HTTPFacilitatorClient` ✅ |
 | **1Shot API** | ETH-free tx relay | Provider delegation + consumer payments + provider claim ✅ |
 | **Venice AI API** | LLM model provider | Text only, OpenAI-compatible API format ✅ |
 | **Supabase** | PostgreSQL database | RLS enabled, all quota tracking ✅ |
@@ -722,6 +721,21 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
 -- consumer_permissions: read own permissions only
 ALTER TABLE consumer_permissions ENABLE ROW LEVEL SECURITY;
+```
+
+### Database Indexes ✅
+```sql
+-- Performance optimization indexes
+CREATE INDEX idx_listings_provider_id ON listings(provider_id);
+CREATE INDEX idx_listings_active ON listings(status, expires_at) WHERE status = 'active';
+CREATE INDEX idx_consumer_permissions_consumer_id ON consumer_permissions(consumer_id);
+CREATE INDEX idx_consumer_permissions_listing_id ON consumer_permissions(listing_id);
+CREATE INDEX idx_consumer_permissions_active ON consumer_permissions(status, expires_at) WHERE status = 'active';
+CREATE INDEX idx_transactions_listing_id ON transactions(listing_id);
+CREATE INDEX idx_transactions_consumer_id ON transactions(consumer_id);
+CREATE INDEX idx_transactions_status ON transactions(status);
+CREATE INDEX idx_claim_history_provider_id ON claim_history(provider_id);
+CREATE INDEX idx_claim_history_status ON claim_history(status);
 ```
 
 ### Critical SQL: Atomic Quota Reservation
@@ -975,6 +989,36 @@ Errors:
   403: { "error": "NOT_YOUR_LISTING" }
   404: { "error": "LISTING_NOT_FOUND" }
   410: { "error": "ALREADY_REVOKED" }
+```
+
+### 14.8 Update Listing (PATCH) ✅
+```
+PATCH /api/listings/[id]
+Authorization: Bearer <wallet_signature>
+Content-Type: application/json
+
+Request:
+{
+  "name": "string",
+  "description": "string",
+  "model_name": "string",
+  "price_per_call_usdc": 0.001,
+  "max_calls": 500,
+  "max_input_chars": 2000,
+  "max_completion_tokens": 500,
+  "expires_at": "2026-07-01T00:00:00Z"
+}
+
+Response 200:
+{
+  "success": true,
+  "listing": { ... }
+}
+
+Errors:
+  400: { "error": "Validation failed" }
+  403: { "error": "Forbidden: not listing owner" }
+  404: { "error": "Listing not found" }
 ```
 
 ---
@@ -1360,7 +1404,8 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 ### Key UI Components
 - **Wallet Connect Button** — MetaMask Smart Account connection (Wagmi)
 - **Listing Card** — model badge, price/call, remaining calls progress bar (X of Y), max context info, expiry countdown
-- **Provider Registration Form** — inline validation, field descriptions, encryption notice
+- **Provider Registration Form** — step-by-step wizard UI (Auth → Register → Delegation → Create Listing) with visual step indicator ✅
+- **Marketplace View** — toggle between grid and list views, full-text client-side search across name, description, model, and provider ✅
 - **Consumer Token Modal** — displays endpoint URL + JWT token, copy buttons, expiry info
 - **Earnings Panel** — pending USDC amount + "Claim" button
 - **Transaction History Table** — timestamp, amount, model, status (consumer + provider views)
