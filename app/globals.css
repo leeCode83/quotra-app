@@ -30,6 +30,7 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+  --font-display: "Sora", sans-serif;
 }
 
 .dark {
@@ -68,29 +69,51 @@ body {
   font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
 }
 
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes mesh-orb {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+  33% { transform: translate(30px, -20px) scale(1.1); opacity: 0.8; }
+  66% { transform: translate(-20px, 15px) scale(0.95); opacity: 0.5; }
 }
 
-.animate-pulse-soft {
-  animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+@keyframes mesh-orb-delayed {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+  33% { transform: translate(-25px, 20px) scale(1.05); opacity: 0.6; }
+  66% { transform: translate(20px, -15px) scale(0.9); opacity: 0.3; }
 }
 
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes mesh-orb-slow {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+  50% { transform: translate(15px, -10px) scale(1.15); opacity: 0.5; }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.4s ease-out;
+@keyframes border-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px -5px var(--color-primary), 0 0 40px -15px var(--color-primary); }
+  50% { box-shadow: 0 0 30px -3px var(--color-primary), 0 0 60px -10px var(--color-primary); }
 }
 
-.animate-slide-up {
-  animation: slide-up 0.5s ease-out;
+.animate-mesh-orb {
+  animation: mesh-orb 12s ease-in-out infinite;
+}
+
+.animate-mesh-orb-delayed {
+  animation: mesh-orb-delayed 15s ease-in-out infinite;
+}
+
+.animate-mesh-orb-slow {
+  animation: mesh-orb-slow 18s ease-in-out infinite;
+}
+
+.animate-border-shimmer {
+  background-size: 200% 200%;
+  animation: border-shimmer 4s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
 }

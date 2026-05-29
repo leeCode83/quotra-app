@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Sora } from "next/font/google";
 import { headers } from "next/headers";
 import { cookieToInitialState } from "wagmi";
 import { getConfig } from "@/lib/web3/config";
@@ -19,6 +20,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const sora = Sora({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
+
 export const metadata: Metadata = {
   title: "Quotra — Decentralized P2P AI API Marketplace",
   description:
@@ -29,7 +36,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const initialState = cookieToInitialState(getConfig(), (await headers()).get("cookie"));
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen flex flex-col`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} font-sans antialiased min-h-screen flex flex-col`}
+      >
         <Providers initialState={initialState}>
           <Navbar />
           <main className="flex-1"><ErrorBoundary>{children}</ErrorBoundary></main>
