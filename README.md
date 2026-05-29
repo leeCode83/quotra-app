@@ -1,186 +1,99 @@
-# Quotra
+<div align="center">
+  <img src="public/screenshoot/home.png" alt="Quotra Home" width="100%" style="border-radius: 12px; margin-bottom: 20px;" />
+  
+  <h1>🚀 Quotra</h1>
+  <p><strong>Sell your idle AI quota, buy LLM access per-call — no credit card, no commitment.</strong></p>
+  
+  <p>
+    Built for the <b>MetaMask Smart Accounts Kit × 1Shot API Dev Cook-Off</b> <br/>
+    Track: <i>Best Use of x402 + ERC-7710</i>
+  </p>
+</div>
 
-A decentralized peer-to-peer marketplace for AI API access. Providers list AI model endpoints, consumers discover and purchase usage — all secured by wallet-based authentication and on-chain payments.
+---
 
-## Features
+## 💡 The Problem
 
-- **Wallet Authentication** — Sign in with MetaMask (or any wagmi-compatible wallet). No passwords, no emails.
-- **AI API Marketplace** — Browse, filter, and discover AI model endpoints from independent providers.
-- **Provider Dashboard** — Register as a provider, list your AI models, manage listings, and track earnings.
-- **Consumer Dashboard** — View purchased permissions, transaction history, and active listings.
-- **x402 Payments** — Pay per request via the Coinbase x402 facilitator protocol using Base Sepolia testnet.
-- **Escrow Claims** — Providers claim earned funds through an escrow smart contract.
-- **API Key Encryption** — AES-256-GCM encrypted storage of provider API keys using Web Crypto API.
-- **JWT Sessions** — Wallet-based JWT sessions for secure API route access.
-- **Supabase Backend** — PostgreSQL database with serverless client (Row Level Security disabled — auth enforced at application layer).
+The current landscape of premium AI APIs (like Venice AI, OpenAI, Anthropic) suffers from two major inefficiencies:
 
-## Tech Stack
+1. **The Credit Card Barrier:** Millions of developers, students, and hackathon builders in emerging markets cannot access premium LLM APIs because they lack the ability to clear traditional fiat credit card billing.
+2. **Idle Subscription Waste:** Power users who pay for premium tiers (e.g., $68/month) rarely utilize 100% of their monthly credit allocations, resulting in massive wasted spend that auto-renews every month.
 
-| Layer      | Technology                                                              |
-| ---------- | ----------------------------------------------------------------------- |
-| Framework  | Next.js 16 (App Router)                                                 |
-| UI         | React 19, Tailwind CSS v4, Radix UI, Lucide Icons                      |
-| Language   | TypeScript (strict)                                                     |
-| Web3       | wagmi v3, viem v2, WalletConnect                                        |
-| Database   | Supabase (PostgreSQL)                                                   |
-| State      | TanStack Query v5                                                       |
-| Auth       | Custom wallet-based JWT (jose library) + Supabase SSR                    |
-| Payments   | x402 facilitator (Coinbase)                                             |
-| Validation | zod v4                                                                  |
-| Testing    | Vitest v4, Testing Library, jsdom                                       |
-| Linting    | ESLint v9 (flat config)                                                 |
+## 🌟 The Solution: Quotra
 
-## Prerequisites
+Quotra is a **Decentralized P2P AI API Marketplace**. We connect users who have excess AI API quota with developers who need API access on a pay-as-you-go basis.
 
-- Node.js 20+
-- npm 10+
-- MetaMask browser extension
-- Base Sepolia test ETH (for payment testing)
+No subscriptions. No fiat billing. No middlemen hoarding the profits.
 
-## Getting Started
+![Quotra Features](public/screenshoot/features.png)
 
-### 1. Clone & Install
+### 🔑 Core Innovations
 
-```bash
-git clone https://github.com/leeCode83/quotra-app.git
-cd quotra-app
-npm install
-```
+- **💸 P2P Revenue Routing:** 90% of all payments go directly to the individual API provider's wallet, not a centralized reseller platform.
+- **🛡️ On-Chain Authorization (ERC-7710):** Providers grant quota access through mathematically auditable and revocable smart contract delegations.
+- **⚡ HTTP-Native Micropayments (x402):** Consumers pay exactly for what they use per API call using USDC over HTTP.
+- **⛽ ETH-Free Experience:** Powered by **MetaMask Smart Accounts** and the **1Shot Relayer**, users can transact using solely USDC without ever worrying about gas fees.
+- **🔒 Escrow Treasury Model:** Payments are settled securely in escrow to guarantee atomic execution and easy refunds.
 
-### 2. Environment Variables
+---
 
-Copy `.env.example` to `.env.local` and fill in the values:
+## 👥 Who is this for?
 
-```bash
-cp .env.example .env.local
-```
+> [!TIP]
+> **For Providers (The Sellers)**  
+> *Monetize your unused API quota.* Got a Venice AI Pro+ plan but only using 30% of it? Connect your wallet, register your API key, sign an ERC-7710 delegation, and start earning passive USDC income while you sleep.
 
-| Variable                              | Required | Description                                      |
-| ------------------------------------- | -------- | ------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`            | Yes      | Supabase project URL                             |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`       | Yes      | Supabase anonymous key                           |
-| `SUPABASE_SERVICE_ROLE_KEY`           | For admin | Supabase service role key (escrow operations)    |
-| `JWT_SECRET`                          | Yes      | Secret for signing wallet-based JWTs             |
-| `QUOTRA_ENCRYPTION_KEY`               | Yes      | Base64 32-byte key for encrypting provider API keys |
-| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`| Yes      | WalletConnect Cloud project ID                   |
-| `NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL`    | No       | Custom RPC URL for Base Sepolia (has default)    |
-| `X402_FACILITATOR_URL`                | No       | x402 facilitator URL (has default)               |
-| `NEXT_PUBLIC_APP_URL`                 | No       | App URL for callbacks (default: localhost:3000)  |
-| `ADMIN_PRIVATE_KEY`                   | For escrow | Private key for server-side escrow withdrawals |
+> [!TIP]
+> **For Consumers (The Buyers)**  
+> *Access premium models instantly.* Need an LLM endpoint for a hackathon or a school project? Browse the Quotra marketplace, pick a model (e.g., Llama 3 70B, Stable Diffusion XL), and pay per-call using USDC from your crypto wallet. No credit cards required.
 
-### 3. Database Setup
+---
 
-Run the schema in your Supabase project SQL Editor:
+## 🛠️ How It Works Under the Hood
 
-```
-supabase/schema.sql
-```
+Quotra combines bleeding-edge Web3 standards to create a seamless Web2-like experience:
 
-This creates all tables, indexes, and functions. Row Level Security is disabled — access control is handled at the application layer via JWT verification.
+1. **Provider Listing:** A provider inputs their Venice AI API key. The key is encrypted locally (AES-256-GCM) and safely stored in Supabase. The provider signs an **ERC-7710** delegation authorizing Quotra to act on their behalf.
+2. **Consumer Payment:** When a consumer makes a request, they are prompted via **ERC-7715** for session auth. The HTTP request includes an **x402** payment header.
+3. **The Proxy (Gateway):** Quotra's backend intercepts the request, deducts the USDC payment into the treasury escrow, decrypts the provider's API key in-memory, and forwards the exact prompt to the AI provider.
+4. **Settlement:** The AI response is streamed back to the consumer, and the provider can claim their accumulated USDC earnings directly to their smart account.
 
-### 4. Run Development Server
+---
 
-```bash
-npm run dev
-```
+## 💻 Tech Stack
 
-Open [http://localhost:3000](http://localhost:3000).
+- **Frontend & Gateway:** Next.js 14 (App Router), React, TailwindCSS
+- **Smart Accounts & Gasless:** MetaMask Smart Accounts Kit, Pimlico Bundler
+- **Web3 Standards:** x402 (HTTP Micropayments), ERC-7710 (Delegation), ERC-7715 (Permissions)
+- **Database & Auth:** Supabase (PostgreSQL, RLS)
+- **AI Backend:** Venice AI (Privacy-first LLM inference)
 
-## Scripts
+---
 
-| Command             | Description                                    |
-| ------------------- | ---------------------------------------------- |
-| `npm run dev`       | Start development server                       |
-| `npm run build`     | Production build (runs typecheck automatically)|
-| `npm run start`     | Start production server                        |
-| `npm run lint`      | Lint all files with ESLint                     |
-| `npm run typecheck` | Run TypeScript type checking                   |
-| `npm run test`      | Run all tests (Vitest)                         |
-| `npm run test:watch`| Run tests in watch mode                        |
+## 🚀 Running Locally
 
-## Project Structure
+> [!IMPORTANT]
+> You need a Supabase project and a 1Shot Dev Platform account to run this locally.
 
-```
-quotra-app/
-├── app/                          # Next.js App Router pages & API routes
-│   ├── api/                      # Backend API routes
-│   │   ├── consumers/register/   # Consumer registration
-│   │   ├── escrow/claim/         # Escrow claim withdrawal
-│   │   ├── escrow/revoke/        # Escrow revocation
-│   │   ├── gateway/[...path]/    # AI API gateway proxy
-│   │   ├── listings/             # Listing CRUD
-│   │   └── providers/register/   # Provider registration
-│   ├── dashboard/                # Provider & consumer dashboards
-│   ├── marketplace/              # API listing marketplace
-│   └── wallet/                   # Wallet & transaction history
-├── src/
-│   ├── components/               # Shared UI components
-│   │   ├── ui/                   # Radix UI primitives
-│   │   └── web3/                 # Web3-specific components
-│   ├── hooks/                    # Custom React hooks
-│   ├── lib/                      # Core utilities
-│   │   ├── web3/                 # wagmi config, contracts, provider
-│   │   └── __tests__/            # Unit tests
-│   ├── middleware/                # Middleware chain (auth, x402)
-│   ├── providers/                # React context providers
-│   └── types/                    # TypeScript type definitions
-├── proxy.ts                      # Next.js 16 proxy (edge middleware)
-├── supabase/
-│   └── schema.sql                # Database schema
-└── vitest.config.ts              # Test configuration
-```
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install
+   ```
+2. Copy `.env.example` to `.env` and fill in your API keys (Supabase, 1Shot API, Pimlico).
+3. Generate an encryption key for your local instance:
+   ```bash
+   node -e "const { randomBytes } = require('crypto'); console.log(randomBytes(32).toString('base64'))"
+   ```
+4. Run the database seed script to populate the marketplace with dummy data:
+   ```bash
+   npx tsx --env-file=.env scripts/seed.ts
+   ```
+5. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-## Architecture Overview
-
-### Authentication Flow
-
-1. User connects MetaMask wallet
-2. Wallet signs a message (SIWE-style)
-3. Backend verifies the signature and issues a JWT containing `wallet_address`
-4. Subsequent API requests include the JWT in the `Authorization: Bearer` header
-5. The proxy middleware (`src/proxy.ts`) validates the JWT before requests reach API routes
-
-### Payment Flow (x402)
-
-1. Consumer requests an AI API endpoint through the gateway
-2. Gateway calculates the cost based on the listing's `price_per_request`
-3. Consumer's wallet sends a transaction with the required amount
-4. x402 facilitator verifies the transaction
-5. Gateway proxies the request to the provider's AI API endpoint
-6. Transaction is marked as confirmed after the response is fully streamed
-
-### Smart Contracts
-
-The escrow contract on Base Sepolia handles:
-- **Deposits** — Consumers fund transactions
-- **Withdrawals** — Providers claim earned funds
-- **Revocations** — Refund failed or cancelled transactions
-
-## Testing
-
-```bash
-# Run all tests
-npm run test
-
-# Run in watch mode
-npm run test:watch
-```
-
-The test suite covers:
-- JWT signing and verification
-- Input validation schemas
-- x402 payment middleware
-- Auth middleware
-- Web3 contract interactions
-- Encryption utilities
-
-## Deployment
-
-Deploy to Vercel:
-
-```bash
-npm install -g vercel
-vercel
-```
-
-Ensure all environment variables are configured in your Vercel project settings.
+---
+<div align="center">
+  <p><i>Built with 🩵 for a more accessible AI future.</i></p>
+</div>
