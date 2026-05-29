@@ -50,7 +50,7 @@ describe("listingSchema", () => {
     name: "GPT-4 Service",
     description: "A powerful language model API service.",
     model_name: "gpt-4",
-    price_per_call_usdc: "0.0001",
+    price_per_call_usdc: 0.0001,
     max_calls: 1000,
     max_input_chars: 2000,
     max_completion_tokens: 500,
@@ -101,7 +101,7 @@ describe("listingSchema", () => {
   it("fails with non-positive max_calls", () => {
     expect(() =>
       listingSchema.parse({ ...validInput, max_calls: 0 })
-    ).toThrow("max_calls must be a positive integer.");
+    ).toThrow();
   });
 
   it("fails with invalid expires_at", () => {

@@ -369,8 +369,8 @@ describe("withX402", () => {
     const insertedArg = mockInsert.mock.calls[0][0] as Record<string, unknown>;
     expect(insertedArg.listing_id).toBe("550e8400-e29b-41d4-a716-446655440000");
     expect(insertedArg.consumer_id).toBe("consumer-1");
-    expect(insertedArg.tx_hash).toBe("0xabc123def456");
-    expect(Number(insertedArg.amount)).toBe(100);
+    expect(insertedArg.payment_tx_hash).toBe("0xabc123def456");
+    expect(Number(insertedArg.amount_usdc)).toBe(100);
     expect(insertedArg.status).toBe("pending");
   });
 });

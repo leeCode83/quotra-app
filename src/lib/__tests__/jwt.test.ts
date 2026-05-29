@@ -67,27 +67,17 @@ describe("jwt", () => {
     });
 
     it("rejects an expired token", async () => {
-      const token = await signJWT({ wallet_address: "0x123" });
-      const OriginalDate = Date;
-      const futureTime = OriginalDate.now() + 2 * 60 * 60 * 1000;
-
-      globalThis.Date = class extends OriginalDate {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        constructor(...args: any[]) {
-          if (args.length === 0) {
-            super(futureTime);
-          } else {
-            super(...(args as ConstructorParameters<typeof OriginalDate>));
-          }
-        }
-        static now() {
-          return futureTime;
-        }
-      } as DateConstructor;
+      const { SignJWT } = await import("jose");
+      const secret = new TextEncoder().encode(process.env.JWT_SECRET || "test-secret-key-that-is-at-least-32-bytes");
+      
+      const jwt = new SignJWT({ wallet_address: "0x123" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt(Math.floor(Date.now() / 1000) - 7200)
+        .setExpirationTime(Math.floor(Date.now() / 1000) - 3600);
+        
+      const token = await jwt.sign(secret);
 
       await expect(verifyJWT(token)).rejects.toThrow("Failed to verify JWT");
-
-      globalThis.Date = OriginalDate;
     });
 
     it("rejects a token with invalid signature", async () => {
