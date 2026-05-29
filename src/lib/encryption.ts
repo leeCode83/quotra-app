@@ -33,15 +33,25 @@ export function hexToBuffer(hex: string): Uint8Array {
  * @throws Error if ENCRYPTION_KEY environment variable is not set or invalid
  */
 async function getEncryptionKey(): Promise<CryptoKey> {
-  const hexKey = process.env.ENCRYPTION_KEY;
+  const hexKey = process.env.QUOTRA_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
   if (!hexKey) {
-    throw new Error("ENCRYPTION_KEY environment variable is not set.");
+    throw new Error("QUOTRA_ENCRYPTION_KEY environment variable is not set.");
   }
   
   try {
-    const keyBytes = hexToBuffer(hexKey);
+    let keyBytes: Uint8Array;
+    if (/^[0-9a-fA-F]{64}$/.test(hexKey)) {
+      keyBytes = hexToBuffer(hexKey);
+    } else {
+      const binaryString = atob(hexKey);
+      keyBytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        keyBytes[i] = binaryString.charCodeAt(i);
+      }
+    }
+
     if (keyBytes.byteLength !== KEY_LENGTH / 8) {
-      throw new Error(`ENCRYPTION_KEY must be exactly ${KEY_LENGTH / 8} bytes (${KEY_LENGTH / 4} hex chars)`);
+      throw new Error(`QUOTRA_ENCRYPTION_KEY must be exactly ${KEY_LENGTH / 8} bytes`);
     }
 
     return await crypto.subtle.importKey(
