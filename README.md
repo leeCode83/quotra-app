@@ -60,6 +60,36 @@ Quotra combines bleeding-edge Web3 standards to create a seamless Web2-like expe
 
 ---
 
+## 🔌 Consumer API Usage (Gateway)
+
+Once a consumer has been granted permission and obtained a JWT token, they can interact with the provider's endpoint using a stateless, OpenAI-compatible format.
+
+**Endpoint:** `POST /api/v1/[delegationId]/chat`
+
+**Headers:**
+- `Authorization: Bearer <JWT_TOKEN>` (Proof of session authorization)
+- `X-PAYMENT: <X402_PAYMENT_PROOF>` (Proof of USDC payment for the call)
+- `Content-Type: application/json`
+
+**Example Request Body:**
+```json
+{
+  "model": "llama-3.3-70b",
+  "messages": [
+    { "role": "system", "content": "You are a helpful assistant." },
+    { "role": "user", "content": "Hello" },
+    { "role": "assistant", "content": "Hi! How can I help?" },
+    { "role": "user", "content": "Explain blockchain." }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 500
+}
+```
+
+> **Note:** The gateway is stateless. The consumer must send the full message history in each request. The total character count of all `content` fields is validated against the provider's `max_input_chars` limit.
+
+---
+
 ## 💻 Tech Stack
 
 - **Frontend & Gateway:** Next.js 14 (App Router), React, TailwindCSS
