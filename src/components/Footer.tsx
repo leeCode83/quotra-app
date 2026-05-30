@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { Zap, Code2, Globe, MessageCircle, Mail, MapPin } from "lucide-react";
 import { TextHoverEffect, FooterBackgroundGradient } from "@/components/ui/hover-footer";
-import { Button } from "@/components/ui/button";
 
 const footerLinks = [
   {
@@ -47,27 +46,6 @@ export function Footer() {
   return (
     <footer className="relative overflow-hidden rounded-3xl mx-4 md:mx-8 mb-8 border border-primary/10">
       <div className="max-w-7xl mx-auto px-6 md:px-14 py-14 z-40 relative">
-        {/* CTA Section (merged from CTASection) */}
-        <div className="text-center space-y-6 pb-16">
-          <h2 className="text-3xl md:text-4xl font-display font-bold">
-            Ready to get started?
-          </h2>
-          <p className="text-muted-foreground max-w-xl mx-auto">
-            Whether you&apos;re an AI provider looking to monetize your models or a consumer
-            seeking affordable AI access, Quotra has you covered.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-2">
-            <Button size="lg" asChild>
-              <Link href="/dashboard/provider">Start as Provider</Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/dashboard/consumer">Start as Consumer</Link>
-            </Button>
-          </div>
-        </div>
-
-        <hr className="border-t border-primary/10 my-12" />
-
         {/* Footer grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-12 md:gap-8 lg:gap-16 pb-12">
           {/* Brand */}
