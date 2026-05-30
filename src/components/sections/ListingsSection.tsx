@@ -1,16 +1,10 @@
 "use client";
 
-import { useRef } from "react";
-import { useGSAP } from "@gsap/react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Link from "next/link";
 import { ArrowRight, Cpu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Reveal } from "@/components/animated/Reveal";
-
-gsap.registerPlugin(ScrollTrigger);
 
 interface Listing {
   id: string;
@@ -26,32 +20,8 @@ interface ListingsSectionProps {
 }
 
 export function ListingsSection({ listings }: ListingsSectionProps) {
-  const sectionRef = useRef<HTMLElement>(null);
-  const cardsRef = useRef<HTMLDivElement[]>([]);
-
-  useGSAP(
-    () => {
-      const cards = cardsRef.current.filter(Boolean);
-      if (!cards.length) return;
-      gsap.fromTo(
-        cards,
-        { y: 40, opacity: 0, scale: 0.97 },
-        {
-          y: 0,
-          opacity: 1,
-          scale: 1,
-          duration: 0.7,
-          stagger: 0.12,
-          ease: "power3.out",
-          scrollTrigger: { trigger: sectionRef.current, start: "top 80%", once: true },
-        }
-      );
-    },
-    { scope: sectionRef }
-  );
-
   return (
-    <section ref={sectionRef} className="relative py-24 md:py-32 overflow-hidden">
+    <section className="relative py-24 md:py-32 overflow-hidden">
       <div className="container mx-auto px-4">
         <Reveal>
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-12">
@@ -89,11 +59,8 @@ export function ListingsSection({ listings }: ListingsSectionProps) {
           </Reveal>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {listings.map((listing, i) => (
-              <div
-                key={listing.id}
-                ref={(el) => { if (el) cardsRef.current[i] = el; }}
-              >
+            {listings.map((listing) => (
+              <div key={listing.id}>
                 <Card className="group relative h-full border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] hover:border-primary/30 transition-colors duration-300">
                   <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-primary/[0.04] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
                   <CardHeader className="pb-3 relative">

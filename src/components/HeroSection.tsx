@@ -1,8 +1,6 @@
 "use client";
 
-import { useRef, useState, Suspense, lazy } from "react";
-import { useGSAP } from "@gsap/react";
-import gsap from "gsap";
+import { useState, Suspense, lazy } from "react";
 import Link from "next/link";
 import { ArrowRight, Shield, Users, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,58 +18,10 @@ const stats = [
 ];
 
 export function HeroSection() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const statsRef = useRef<HTMLDivElement>(null);
-  const badgeRef = useRef<HTMLDivElement>(null);
-  const descRef = useRef<HTMLParagraphElement>(null);
-  const ctaRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
-
-  useGSAP(
-    () => {
-      const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
-
-      tl.fromTo(
-        badgeRef.current,
-        { y: 20, opacity: 0, scale: 0.95 },
-        { y: 0, opacity: 1, scale: 1, duration: 0.6 }
-      )
-        .fromTo(
-          descRef.current,
-          { y: 30, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.8 },
-          "-=0.3"
-        )
-        .fromTo(
-          ctaRef.current?.children ?? [],
-          { y: 20, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.5, stagger: 0.1 },
-          "-=0.4"
-        );
-
-      gsap.fromTo(
-        statsRef.current?.children ?? [],
-        { y: 30, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
-          duration: 0.7,
-          stagger: 0.12,
-          ease: "power3.out",
-          scrollTrigger: {
-            trigger: statsRef.current,
-            start: "top 85%",
-            once: true,
-          },
-        }
-      );
-    },
-    { scope: sectionRef }
-  );
 
   return (
     <section
-      ref={sectionRef}
       className="relative overflow-hidden pt-24 pb-16 md:pt-32 md:pb-24"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -101,14 +51,13 @@ export function HeroSection() {
           />
 
           <p
-            ref={descRef}
             className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed"
           >
             Connect AI providers with consumers through a peer-to-peer marketplace secured by
             on-chain escrow. No middlemen, no lock-in, just direct access to AI models.
           </p>
 
-          <div ref={ctaRef} className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
             <Button
               size="lg"
               className="shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-105 active:scale-95 hover:ring-4 hover:ring-primary/20"
@@ -133,7 +82,6 @@ export function HeroSection() {
         </div>
 
         <div
-          ref={statsRef}
           className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-20 max-w-2xl mx-auto"
         >
           {stats.map((stat) => {

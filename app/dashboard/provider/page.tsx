@@ -63,7 +63,7 @@ export default function ProviderDashboardPage() {
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
 
-  const { claim, claimStatus } = useProviderClaim();
+  const { claim } = useProviderClaim();
 
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
     queryKey: ["provider-dashboard", token],
@@ -239,7 +239,18 @@ export default function ProviderDashboardPage() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="modelName">Model Name</Label>
-                <Input id="modelName" value={form.modelName} onChange={(e) => setForm({ ...form, modelName: e.target.value })} placeholder="gpt-4o-mini" />
+                <select 
+                  id="modelName"
+                  className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={form.modelName}
+                  onChange={(e) => setForm({ ...form, modelName: e.target.value })}
+                >
+                  <option value="" disabled>Select a model</option>
+                  <option value="llama-3.3-70b">Llama 3.3 70B</option>
+                  <option value="deepseek-r1-llama-70b">DeepSeek R1 (Llama 70B)</option>
+                  <option value="deepseek-v4-pro">DeepSeek v4 Pro</option>
+                  <option value="qwen-3.6">Qwen 3.6</option>
+                </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

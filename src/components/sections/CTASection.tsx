@@ -1,39 +1,11 @@
 "use client";
 
-import { useRef } from "react";
-import { useGSAP } from "@gsap/react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-gsap.registerPlugin(ScrollTrigger);
-
 export function CTASection() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useGSAP(
-    () => {
-      const el = sectionRef.current;
-      if (!el) return;
-      gsap.fromTo(
-        el.querySelectorAll(".cta-item"),
-        { y: 30, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
-          duration: 0.8,
-          stagger: 0.15,
-          ease: "power4.out",
-          scrollTrigger: { trigger: el, start: "top 85%", once: true },
-        }
-      );
-    },
-    { scope: sectionRef }
-  );
-
   return (
-    <section ref={sectionRef} className="relative py-24 md:py-32">
+    <section className="relative py-24 md:py-32">
       <div className="container mx-auto px-4">
         <div className="relative rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/[0.08] via-primary/[0.03] to-cyan-500/[0.05] p-8 md:p-16 text-center overflow-hidden">
           <div className="absolute inset-0 rounded-3xl p-[1px] pointer-events-none">
