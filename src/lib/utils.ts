@@ -29,6 +29,6 @@ export function formatDate(dateString: string): string {
 }
 
 export function formatPrice(price: number): string {
-  if (price === 0) return "Free";
-  return `${price.toFixed(4)} ETH`;
+  if (price === 0) return "0";
+  return Number(price.toFixed(3)).toString();
 }

@@ -31,6 +31,7 @@ export type ProviderRegistration = z.infer<typeof providerRegistrationSchema>;
  */
 export const providerFullRegistrationSchema = z.object({
   walletAddress: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format."),
+  name: z.string().min(3, "Name must be at least 3 characters long.").optional(),
   veniceApiKey: z.string().min(10, "Venice AI API key required"),
   modelName: z.string().min(1).refine(isValidVeniceModel, "Unsupported Venice AI model"),
   pricePerCallUsdc: z.number().min(0.0001).max(1.00),

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyJWT } from "@/lib/jwt";
 import { providerFullRegistrationSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/encryption";
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized: wallet address mismatch" }, { status: 401 });
     }
 
-    const supabase = await createClient();
+    const supabase = supabaseAdmin;
 
     // 1. Get or Create Provider
     const { data: existingProvider } = await supabase
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       .from("listings")
       .insert({
         provider_id: providerId,
-        name: `${providerName}'s ${data.modelName} Listing`,
+        name: data.name || `${providerName}'s ${data.modelName} Listing`,
         description: `Access to ${data.modelName} provided by ${providerName}`,
         model_name: data.modelName,
         price_per_call_usdc: data.pricePerCallUsdc,
