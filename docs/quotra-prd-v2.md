@@ -43,17 +43,17 @@
 **Project Name:** Quotra
 **Tagline:** *"Sell your idle AI quota, buy LLM access per-call — no credit card, no commitment."*
 **Hackathon:** MetaMask Smart Accounts Kit × 1Shot API Dev Cook-Off
-**Target Track:** Best Use of x402 + ERC-7710
+**Target Tracks:** Best Use of x402 + ERC-7710, Best 1Shot API Project
 **Submission Deadline:** 15 June 2026
 
 ### What is Quotra?
-Quotra is a decentralized, peer-to-peer AI API marketplace. Users who hold active Venice AI subscriptions can monetize their idle quota by listing it on Quotra. Other users can consume LLM API access by paying USDC per call — without needing a credit card, without subscriptions, and without commitment.
+Quotra is a decentralized, peer-to-peer AI API marketplace. Users who hold active subscriptions to premium AI providers (OpenAI, Anthropic, Gemini) can monetize their idle quota by listing it on Quotra. Other users can consume LLM API access by paying USDC per call — without needing a credit card, without subscriptions, and without commitment.
 
 The core innovation is the combination of:
 - **ERC-7710 delegation** — on-chain authorization layer for providers to cryptographically grant quota access
 - **x402 micropayments** — HTTP-native USDC payment per API call, settled to Quotra treasury (escrow)
 - **MetaMask Smart Accounts** — ETH-free UX for all users via 1Shot Relayer
-- **Venice AI** — privacy-first, open model provider as the anchor LLM backend
+- **Premium AI Providers** — OpenAI, Anthropic, and Gemini as the anchor LLM backends
 - **Escrow treasury model** — all payments flow through Quotra treasury; providers claim earnings manually
 
 ### Key Design Decisions
@@ -69,8 +69,8 @@ The core innovation is the combination of:
 ### Pain Point 1: Credit Card Barrier
 Developers, students, and hackathon builders in Southeast Asia (and other emerging markets) cannot access premium LLM APIs because these platforms require credit card billing setup. Many users do not have credit cards or are uncomfortable providing card details for experimental or short-term projects.
 
-### Pain Point 2: Idle AI Subscription Waste
-Users who subscribe to Venice AI's Pro, Pro+, or Max plans often do not fully utilize their monthly credit allocation. This results in wasted spend — subscriptions that auto-renew without delivering full value.
+### Pain Point 2: Idle AI Subscription Waste & Strict Credit Card Barriers
+Users who subscribe to premium AI services like OpenAI, Anthropic, or Gemini often do not fully utilize their monthly credit allocation or usage limits. This results in wasted spend. Moreover, these top-tier platforms strictly require credit card billing to obtain an API key, which blocks many users in emerging markets from accessing their powerful capabilities directly.
 
 ### Gap in the Market
 No existing platform enables:
@@ -109,7 +109,7 @@ No existing platform enables:
 
 ### Persona 2: Rina — The Provider
 - **Who:** Freelance developer, Jakarta, 27 years old
-- **Problem:** Subscribed to Venice AI Pro+ ($68/month) but only uses ~30% of her 7,500 monthly credits
+- **Problem:** Subscribed to OpenAI and Anthropic premium tiers but only uses ~30% of her monthly limits
 - **Behavior:** Active in crypto, comfortable with wallets and DeFi
 - **Goal:** Monetize her idle quota, earn passive USDC income from her subscription
 
@@ -143,15 +143,15 @@ OpenRouter is a centralized reseller — they buy API access wholesale and resel
 ## 6. Product Scope
 
 ### In Scope (MVP — Hackathon)
-- Provider onboarding: connect wallet, register Venice AI key, set delegation rules, list quota
+- Provider onboarding: connect wallet, register API keys (OpenAI, Anthropic, Gemini), set delegation rules, list quota
 - Consumer marketplace: browse providers, filter by model, view price/call and remaining quota
 - ERC-7710 delegation signing via MetaMask Smart Accounts Kit
 - ERC-7715 consumer session permission grant
 - x402 payment flow per API call → settles to Quotra treasury
-- Next.js API Gateway: validate session → check quota → intercept payment → forward to Venice AI → return response
+- Next.js API Gateway: validate session → check quota → intercept payment → forward to AI provider → return response
 - Treasury escrow: all payments accumulate in treasury, provider claims manually
 - Delegation state tracking in Supabase (off-chain quota enforcement)
-- Multi-key support: one provider can list multiple Venice AI keys/models independently
+- Multi-key support: one provider can list multiple API keys/models independently
 - OpenAI-inspired request/response format (partial compatibility)
 - Stateless multi-turn chat (consumer manages message history)
 - Request hard limits: `max_input_chars` + `max_completion_tokens` per listing
@@ -161,7 +161,7 @@ OpenRouter is a centralized reseller — they buy API access wholesale and resel
 ### Out of Scope (Post-Hackathon)
 - Provider/consumer rating & review system
 - Mainnet deployment
-- Support for non-Venice AI model providers
+- Support for open-source or non-premium model providers
 - Streaming responses (SSE)
 - Pre-funded consumer wallets / deposit system
 - Mobile app
@@ -243,8 +243,8 @@ PER-CALL:
 ### 9.2 Provider Registration Flow
 1. Provider connects MetaMask Smart Account
 2. Provider fills listing form:
-   - Venice AI API key (plaintext input, encrypted server-side before storage)
-   - Model name (selected from Venice AI supported model list)
+   - API key (OpenAI/Anthropic/Gemini) (plaintext input, encrypted server-side before storage)
+   - Model name (selected from supported model list for the chosen provider)
    - Price per call in USDC (minimum: $0.0001, maximum: $1.00)
    - Max total calls (minimum: 10, maximum: 100,000)
    - Max input chars per request (minimum: 100, maximum: 8,000, default: 2,000)
@@ -409,26 +409,26 @@ Step 8: Quota Reservation (pre-call decrement)
   - If RETURNING is empty → 410 NO_CALLS_REMAINING
     (rollback: update transaction status to 'refund_pending')
 
-Step 9: Venice AI Call
+Step 9: AI Provider Call
   - Fetch ciphertext + IV + auth_tag from Supabase
-  - Decrypt Venice AI key in-memory (AES-256-GCM)
-  - Build Venice AI request (OpenAI-compatible format)
-  - POST to Venice AI API with decrypted key in Authorization header
+  - Decrypt API key in-memory (AES-256-GCM)
+  - Build provider request (format based on chosen model)
+  - POST to chosen AI API with decrypted key in header
   - Minimize decrypted key lifetime in application scope — do not persist
   - Timeout: 30 seconds
 
-Step 10a: Venice AI SUCCESS
+Step 10a: AI Provider SUCCESS
   - Update transaction: status = 'completed', provider_pending_usdc = price * 0.90
   - Accumulate earnings: UPDATE listings SET total_calls_made = total_calls_made + 1
   - Accumulate provider earnings: UPDATE providers SET pending_earnings_usdc = pending_earnings_usdc + (price * 0.90)
-  - Return Venice AI response to consumer (200 OK)
+  - Return AI response to consumer (200 OK)
 
-Step 10b: Venice AI FAILURE
+Step 10b: AI Provider FAILURE
   - Update transaction: status = 'refund_pending'
   - Rollback quota reservation: remaining_calls += 1
   - Do NOT credit provider earnings
   - Trigger refund flow: treasury owes consumer full payment amount
-  - Return 502 VENICE_AI_ERROR to consumer
+  - Return 502 AI_PROVIDER_ERROR to consumer
   - Consumer will be refunded from treasury (see Section 16)
 ```
 
@@ -458,7 +458,7 @@ Step 10b: Venice AI FAILURE
 
 ### 9.9 Multi-Key Provider Support ✅
 - One provider wallet can create multiple listings
-- Each listing = one Venice AI key + one delegation + independent settings
+- Each listing = one API key (OpenAI/Anthropic/Gemini) + one delegation + independent settings
 - Each listing has independently configurable: model, price, max calls, max input chars, max completion tokens, expiry
 - All listings appear separately on marketplace
 - Provider can revoke individual listings without affecting others
@@ -605,7 +605,7 @@ Consumer (app/code)
 | **ERC-7715** | Consumer session permission grant | One-time per listing per consumer |
 | **x402 Protocol** (`@x402/next`, `@x402/core`) | HTTP-native per-call USDC payment | Intercept in Next.js API Route via `withX402` wrapper and `HTTPFacilitatorClient` ✅ |
 | **1Shot API** | ETH-free tx relay | Provider delegation + consumer payments + provider claim ✅ |
-| **Venice AI API** | LLM model provider | Text only, OpenAI-compatible API format ✅ |
+| **OpenAI / Anthropic / Gemini APIs** | LLM model providers | Text only ✅ |
 | **Supabase** | PostgreSQL database | RLS enabled, all quota tracking ✅ |
 | **Vercel** | Deployment | Edge + Node.js runtime separation ✅ |
 | **Base Sepolia** | Blockchain network | chainId: 84532 ✅ |
@@ -633,6 +633,7 @@ CREATE TABLE providers (
 CREATE TABLE listings (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id           UUID REFERENCES providers(id) ON DELETE CASCADE,
+  name                  TEXT NOT NULL,
   delegation_id         TEXT NOT NULL UNIQUE,       -- ERC-7710 delegation hash/id
   signed_delegation     JSONB NOT NULL,             -- full signed delegation object (for redemption)
   encrypted_key         TEXT NOT NULL,              -- AES-256-GCM ciphertext
@@ -1439,7 +1440,7 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 | Per-token pricing model | More complex, flat per-call sufficient for PoC |
 | Automated batch settlement cron | Manual claim sufficient for hackathon |
 | Mainnet deployment | Risk mitigation — testnet only for hackathon |
-| Non-Venice AI providers (OpenAI, Anthropic) | Potential ToS risk |
+| Non-premium AI providers | Kept out of scope to focus on premium models |
 | Streaming responses (SSE) | Complex interaction with x402 per-call model |
 | Pre-funded consumer deposit | Pure per-call simpler for MVP |
 | Mobile app | Time constraint |

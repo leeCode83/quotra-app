@@ -8,8 +8,17 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================
--- Drop existing objects (idempotent — safe to re-run)
+-- Clear existing data and objects (idempotent — safe to re-run)
 -- ============================================================
+
+-- Explicitly clear all data if tables exist
+DO $$ 
+BEGIN 
+  TRUNCATE TABLE claim_history, transactions, consumer_permissions, listings, consumers, providers CASCADE;
+EXCEPTION 
+  WHEN undefined_table THEN 
+    -- Ignore error if tables do not exist yet
+END $$;
 DROP TYPE IF EXISTS transaction_status CASCADE;
 DROP TYPE IF EXISTS claim_status CASCADE;
 DROP TABLE IF EXISTS claim_history CASCADE;
@@ -25,7 +34,6 @@ DROP TABLE IF EXISTS providers CASCADE;
 CREATE TABLE providers (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   wallet_address        TEXT NOT NULL UNIQUE,
-  name                  TEXT NOT NULL,
   pending_earnings_usdc NUMERIC(18, 8) NOT NULL DEFAULT 0,
   total_earned_usdc     NUMERIC(18, 8) NOT NULL DEFAULT 0,
   created_at            TIMESTAMPTZ DEFAULT now()
@@ -40,9 +48,8 @@ COMMENT ON COLUMN providers.total_earned_usdc IS 'All-time earnings (claimed + p
 -- ============================================================
 CREATE TABLE listings (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider_id           UUID NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+  provider_id           UUID REFERENCES providers(id) ON DELETE CASCADE,
   name                  TEXT NOT NULL,
-  description           TEXT,
   delegation_id         TEXT NOT NULL UNIQUE,
   signed_delegation     JSONB NOT NULL,
   encrypted_key         TEXT NOT NULL,
@@ -75,7 +82,6 @@ COMMENT ON COLUMN listings.status IS 'active | revoked | expired';
 CREATE TABLE consumers (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   wallet_address    TEXT NOT NULL UNIQUE,
-  name              TEXT,
   total_spent_usdc  NUMERIC(18, 8) NOT NULL DEFAULT 0,
   created_at        TIMESTAMPTZ DEFAULT now()
 );
@@ -115,8 +121,7 @@ CREATE TABLE transactions (
   prompt_tokens         INTEGER,
   completion_tokens     INTEGER,
   created_at            TIMESTAMPTZ DEFAULT now(),
-  completed_at          TIMESTAMPTZ,
-  updated_at            TIMESTAMPTZ DEFAULT now()
+  completed_at          TIMESTAMPTZ
 );
 
 COMMENT ON TABLE transactions IS 'Payment transaction records';
@@ -135,8 +140,7 @@ CREATE TABLE claim_history (
   amount_usdc     NUMERIC(18, 8) NOT NULL,
   tx_hash         TEXT,
   status          TEXT NOT NULL DEFAULT 'pending',
-  created_at      TIMESTAMPTZ DEFAULT now(),
-  updated_at      TIMESTAMPTZ DEFAULT now()
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
 
 COMMENT ON TABLE claim_history IS 'Provider claim/withdrawal history';
