@@ -18,7 +18,7 @@ async function getWalletAddress(request: NextRequest): Promise<string | null> {
   try {
     const payload = await verifyJWT(token);
     const wallet = payload.wallet_address;
-    if (typeof wallet === "string") return wallet;
+    if (typeof wallet === "string") return wallet.toLowerCase();
     return null;
   } catch {
     return null;
@@ -31,7 +31,7 @@ export async function GET() {
     const { data: listings, error } = await supabase
       .from("listings")
       .select(
-        "id, name, description, model_name, price_per_call_usdc, max_calls, remaining_calls, max_input_chars, max_completion_tokens, status, expires_at, created_at, providers ( name, wallet_address )"
+        "id, name, model_name, price_per_call_usdc, max_calls, remaining_calls, max_input_chars, max_completion_tokens, status, expires_at, created_at, providers ( wallet_address )"
       )
       .eq("status", "active")
       .gt("expires_at", new Date().toISOString())
@@ -51,7 +51,6 @@ export async function GET() {
       return {
         id: item.id,
         name: item.name,
-        description: item.description,
         modelName: item.model_name,
         pricePerCallUsdc: item.price_per_call_usdc,
         maxCalls: item.max_calls,
@@ -121,7 +120,6 @@ export async function POST(request: NextRequest) {
       .insert({
         provider_id: provider.id,
         name: data.name,
-        description: data.description,
         model_name: data.model_name,
         price_per_call_usdc: data.price_per_call_usdc,
         max_calls: data.max_calls,

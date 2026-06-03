@@ -3,7 +3,7 @@ import { gatewayRequestSchema } from "@/lib/validators";
 import { withAuth, withX402, PaymentRequest, PaymentContext } from "@/middleware";
 import { createClient } from "@/lib/supabase-server";
 import { decrypt } from "@/lib/encryption";
-import { callChatCompletion } from "@/lib/venice/client";
+import { callAIProvider, AIProviderError } from "@/lib/ai-providers";
 import {
   verifyGatewayJWT,
   checkConsumerPermission,
@@ -86,22 +86,22 @@ async function chatHandler(
     // Step 8: Atomic Quota Reservation
     await reserveQuotaSlot(supabase, listing.id);
 
-    // Step 9: Venice AI Call
-    let veniceResponse;
+    // Step 9: AI Provider Call via Vercel AI SDK
+    let aiResponse;
     try {
       const decryptedKey = await decrypt(listing.encrypted_key, listing.key_iv, listing.key_auth_tag);
-      
-      // Map listing model to body if not provided or force it to listing model
-      const finalBody = {
-        ...gatewayBody,
-        model: listing.model_name
-      };
 
-      veniceResponse = await callChatCompletion(decryptedKey, finalBody);
+      aiResponse = await callAIProvider({
+        modelId: listing.model_name,
+        apiKey: decryptedKey,
+        chat: gatewayBody.chat,
+        systemPrompt: gatewayBody.systemPrompt,
+        maxOutputTokens: gatewayBody.maxOutputTokens,
+      });
     } catch (error) {
       // Step 10b: Failure -> Rollback Quota
       await rollbackQuotaSlot(supabase, listing.id);
-      
+
       // Update transaction status to refund_pending
       await supabase
         .from("transactions")
@@ -112,7 +112,11 @@ async function chatHandler(
     }
 
     // Step 10a: Success -> Record transaction completion and earnings
-    await recordSuccessTransaction(supabase, payment.tx_hash, (veniceResponse.usage as Record<string, unknown>) || undefined);
+    await recordSuccessTransaction(
+      supabase,
+      payment.tx_hash,
+      aiResponse.usage as unknown as Record<string, unknown>
+    );
     
     // The custom withX402 already split the provider_amount_usdc (90%) and inserted it.
     // We just need to accumulate it in the provider's pending_earnings_usdc.
@@ -126,17 +130,16 @@ async function chatHandler(
       await accumulateProviderEarnings(supabase, listing.provider_id, txData.provider_amount_usdc);
     }
 
-    // Return the Venice AI response
-    return NextResponse.json(veniceResponse);
+    // Return Vercel AI SDK response: { text, usage }
+    return NextResponse.json(aiResponse);
 
   } catch (error) {
     if (error instanceof GatewayError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
-    // Handle VeniceError (already has status and code)
-    if (error instanceof Error && error.name === "VeniceError") {
-       const vErr = error as Error & { code?: string; status?: number };
-       return NextResponse.json({ error: vErr.message, code: vErr.code }, { status: vErr.status || 500 });
+    // Handle AIProviderError (from Vercel AI SDK wrapper)
+    if (error instanceof AIProviderError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
     console.error("[Gateway] Unhandled error:", error);
     return NextResponse.json(

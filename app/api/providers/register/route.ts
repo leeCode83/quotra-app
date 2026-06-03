@@ -17,7 +17,7 @@ async function getWalletAddress(request: NextRequest): Promise<string | null> {
   try {
     const payload = await verifyJWT(token);
     const wallet = payload.wallet_address;
-    if (typeof wallet === "string") return wallet;
+    if (typeof wallet === "string") return wallet.toLowerCase();
     return null;
   } catch {
     return null;

@@ -18,7 +18,7 @@ async function getWalletAddress(request: NextRequest): Promise<string | null> {
   try {
     const payload = await verifyJWT(token);
     const wallet = payload.wallet_address;
-    if (typeof wallet === "string") return wallet;
+    if (typeof wallet === "string") return wallet.toLowerCase();
     return null;
   } catch {
     return null;
@@ -68,7 +68,7 @@ export async function GET(
     const { data: listing, error } = await supabase
       .from("listings")
       .select(
-        "id, name, description, model_name, price_per_call_usdc, max_calls, remaining_calls, max_input_chars, max_completion_tokens, status, expires_at, created_at, providers ( id, name, wallet_address, created_at )"
+        "id, name, model_name, price_per_call_usdc, max_calls, remaining_calls, max_input_chars, max_completion_tokens, status, expires_at, created_at, providers ( id, wallet_address, created_at )"
       )
       .eq("id", id)
       .single();
@@ -137,8 +137,6 @@ export async function PATCH(
     const updateData: Record<string, unknown> = {};
     if (parseResult.data.name !== undefined)
       updateData.name = parseResult.data.name;
-    if (parseResult.data.description !== undefined)
-      updateData.description = parseResult.data.description;
     if (parseResult.data.model_name !== undefined)
       updateData.model_name = parseResult.data.model_name;
     if (parseResult.data.price_per_call_usdc !== undefined)

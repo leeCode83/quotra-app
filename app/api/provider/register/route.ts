@@ -22,7 +22,8 @@ export async function POST(request: NextRequest) {
     if (token) {
       try {
         const payload = await verifyJWT(token);
-        walletAddress = (payload as { wallet_address?: string }).wallet_address as string;
+        const extractedWallet = (payload as { wallet_address?: string }).wallet_address as string;
+        walletAddress = extractedWallet ? extractedWallet.toLowerCase() : undefined;
       } catch {
         walletAddress = undefined;
       }
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     const data = parseResult.data;
 
-    if (data.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+    if (data.walletAddress.toLowerCase() !== walletAddress) {
       return NextResponse.json({ error: "Unauthorized: wallet address mismatch" }, { status: 401 });
     }
 
@@ -52,17 +53,17 @@ export async function POST(request: NextRequest) {
     // 1. Get or Create Provider
     const { data: existingProvider } = await supabase
       .from("providers")
-      .select("id, name")
+      .select("id")
       .ilike("wallet_address", walletAddress)
       .maybeSingle();
 
     let providerId = existingProvider?.id;
-    const providerName = existingProvider?.name || data.walletAddress.slice(0, 8); // fallback name
+    const providerName = data.walletAddress.slice(0, 8); // short wallet as display name
 
     if (!providerId) {
       const { data: newProvider, error: pError } = await supabase
         .from("providers")
-        .insert({ wallet_address: walletAddress, name: providerName })
+        .insert({ wallet_address: walletAddress })
         .select("id")
         .single();
 
@@ -72,8 +73,8 @@ export async function POST(request: NextRequest) {
       providerId = newProvider.id;
     }
 
-    // 2. Encrypt Venice API Key
-    const { encrypted_key, key_iv, key_auth_tag } = await encrypt(data.veniceApiKey);
+    // 2. Encrypt AI Provider API Key
+    const { encrypted_key, key_iv, key_auth_tag } = await encrypt(data.apiKey);
 
     // 3. Generate Delegation ID 
     // In a real flow, delegation ID comes from the signature. For testing/hackathon, we might generate it
@@ -95,7 +96,6 @@ export async function POST(request: NextRequest) {
       .insert({
         provider_id: providerId,
         name: data.name || `${providerName}'s ${data.modelName} Listing`,
-        description: `Access to ${data.modelName} provided by ${providerName}`,
         model_name: data.modelName,
         price_per_call_usdc: data.pricePerCallUsdc,
         max_calls: data.maxCalls,

@@ -99,13 +99,14 @@ export function validateRequestLimits(
   maxInputChars: number,
   maxCompletionTokens: number
 ) {
-  const totalInputChars = body.messages.reduce((acc, msg) => acc + msg.content.length, 0);
+  // Count total input chars across chat message and optional system prompt
+  const totalInputChars = body.chat.length + (body.systemPrompt?.length ?? 0);
   if (totalInputChars > maxInputChars) {
     throw new GatewayError(`Input exceeds maximum allowed characters (${totalInputChars} > ${maxInputChars})`, 400, "REQUEST_TOO_LARGE");
   }
 
-  if (body.max_tokens && body.max_tokens > maxCompletionTokens) {
-    throw new GatewayError(`Requested max_tokens exceeds allowed limit (${body.max_tokens} > ${maxCompletionTokens})`, 400, "REQUEST_TOO_LARGE");
+  if (body.maxOutputTokens && body.maxOutputTokens > maxCompletionTokens) {
+    throw new GatewayError(`Requested maxOutputTokens exceeds allowed limit (${body.maxOutputTokens} > ${maxCompletionTokens})`, 400, "REQUEST_TOO_LARGE");
   }
 }
 

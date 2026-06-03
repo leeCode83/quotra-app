@@ -12,12 +12,12 @@ const WALLET_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Model type enum values
-import { isValidVeniceModel } from "@/lib/venice/models";
+import { isValidModel } from "@/lib/ai-providers/models";
 /**
  * Schema for provider registration
  */
 export const providerRegistrationSchema = z.object({
-  wallet_address: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format. Must be 0x followed by 40 hex characters."),
+  wallet_address: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format. Must be 0x followed by 40 hex characters.").transform(val => val.toLowerCase()),
   name: z.string().min(3, "Name must be at least 3 characters long."),
 });
 
@@ -30,10 +30,11 @@ export type ProviderRegistration = z.infer<typeof providerRegistrationSchema>;
  * Schema for combined provider registration and listing creation
  */
 export const providerFullRegistrationSchema = z.object({
-  walletAddress: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format."),
+  walletAddress: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format.").transform(val => val.toLowerCase()),
   name: z.string().min(3, "Name must be at least 3 characters long.").optional(),
-  veniceApiKey: z.string().min(10, "Venice AI API key required"),
-  modelName: z.string().min(1).refine(isValidVeniceModel, "Unsupported Venice AI model"),
+  /** API key for the selected AI provider (OpenAI / Anthropic / Google Gemini) */
+  apiKey: z.string().min(10, "AI provider API key is required"),
+  modelName: z.string().min(1).refine(isValidModel, "Unsupported model. Must be one of OpenAI, Anthropic, or Gemini models"),
   pricePerCallUsdc: z.number().min(0.0001).max(1.00),
   maxCalls: z.number().int().min(10).max(100000),
   maxInputChars: z.number().int().min(100).max(8000).default(2000),
@@ -54,8 +55,7 @@ export type ProviderFullRegistration = z.infer<typeof providerFullRegistrationSc
 export const listingSchema = z.object({
   provider_id: z.string().regex(UUID_REGEX, "Invalid provider ID format."),
   name: z.string().min(3, "Name must be at least 3 characters long."),
-  description: z.string().min(10, "Description must be at least 10 characters long."),
-  model_name: z.string().min(1, "Model name is required."),
+  model_name: z.string().min(1, "Model name is required.").refine(isValidModel, "Unsupported model"),
   price_per_call_usdc: z.number().min(0.0001).max(1.00),
   max_calls: z.number().int().min(10).max(100000),
   max_input_chars: z.number().int().min(100).max(8000).default(2000),
@@ -137,16 +137,17 @@ export const x402PaymentSchema = z.object({
 export type X402PaymentInput = z.infer<typeof x402PaymentSchema>;
 
 /**
- * Schema for Gateway request validation
+ * Schema for Gateway request validation.
+ * Simplified to 3 fields: chat (required), systemPrompt and maxOutputTokens (optional).
+ * The model is determined from the listing — consumer does not choose the model.
  */
 export const gatewayRequestSchema = z.object({
-  model: z.string().min(1),
-  messages: z.array(z.object({
-    role: z.enum(["system", "user", "assistant"]),
-    content: z.string().min(1),
-  })).min(1).max(50),
-  temperature: z.number().min(0).max(2).optional().default(0.7),
-  max_tokens: z.number().int().positive().optional(),
+  /** Main user message / instruction to the AI */
+  chat: z.string().min(1, "chat is required").max(32_000, "chat exceeds 32000 characters"),
+  /** Optional system prompt (e.g. persona, context, instructions for the AI) */
+  systemPrompt: z.string().max(8_000, "systemPrompt exceeds 8000 characters").optional(),
+  /** Max number of output tokens. Capped by listing.max_completion_tokens. Default: 1500 */
+  maxOutputTokens: z.number().int().min(1).max(4096).optional(),
 });
 
 /**
