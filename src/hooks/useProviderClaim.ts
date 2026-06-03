@@ -49,7 +49,7 @@ async function fetchTotalEarnings(walletAddress: string): Promise<number> {
   const { data: provider } = await supabase
     .from("providers")
     .select("id")
-    .eq("wallet_address", walletAddress)
+    .ilike("wallet_address", walletAddress)
     .maybeSingle();
 
   if (!provider) return 0;

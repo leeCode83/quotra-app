@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const { data: consumer } = await supabase
       .from("consumers")
       .select("id")
-      .eq("wallet_address", walletAddress)
+      .ilike("wallet_address", walletAddress)
       .maybeSingle();
 
     let consumerId = consumer?.id;

@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@metamask/smart-accounts-kit": "^1.6.0",
+    "@number-flow/react": "^0.6.0",
     "@paper-design/shaders-react": "^0.0.76",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-scroll-area": "^1.2.10",

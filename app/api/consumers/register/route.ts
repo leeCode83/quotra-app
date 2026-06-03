@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const { data: existing } = await supabase
       .from("consumers")
       .select("id")
-      .eq("wallet_address", walletAddress)
+      .ilike("wallet_address", walletAddress)
       .maybeSingle();
 
     if (existing) {
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     const { data: consumer, error } = await supabase
       .from("consumers")
       .select("id, wallet_address, name, created_at")
-      .eq("wallet_address", walletAddress)
+      .ilike("wallet_address", walletAddress)
       .single();
 
     if (error) {

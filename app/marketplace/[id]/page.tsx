@@ -2,7 +2,8 @@
 
 import { use, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check } from "lucide-react";
+import { motion } from "motion/react";
+import { ArrowLeft, Check, Copy, Shield, Timer, Terminal, Wallet, Zap } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,6 +17,19 @@ import { useAccount } from "wagmi";
 import type { Address } from "viem";
 
 const SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Address;
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" as const } },
+};
 
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -35,6 +49,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     }
     return false;
   });
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
 
   const { data: listing, isLoading, error } = useQuery<ListingWithProvider>({
     queryKey: ["listing", id],
@@ -55,7 +70,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     const perms = stored ? JSON.parse(stored) : [];
     perms.push({ listingId: id, jwt: result.jwt, expiresAt: result.expiresAt });
     localStorage.setItem("quotra_permissions", JSON.stringify(perms));
-    
+
     setGranted(true);
 
     const endpoint = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${listing?.delegation_id || result.permissionId || "delegation-id"}/chat`;
@@ -67,137 +82,270 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     });
   };
 
+  const handleCopyEndpoint = () => {
+    if (!listing) return;
+    const url = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${listing.delegation_id || "{delegation_id}"}/chat`;
+    navigator.clipboard.writeText(url);
+    setCopiedEndpoint(true);
+    setTimeout(() => setCopiedEndpoint(false), 2000);
+  };
+
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="animate-pulse space-y-4 max-w-3xl mx-auto">
-          <div className="h-8 w-24 bg-muted rounded mb-8" />
-          <div className="h-12 w-3/4 bg-muted rounded" />
-          <div className="h-4 w-1/2 bg-muted rounded" />
-          <div className="h-64 bg-muted rounded mt-8" />
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+          <div className="grid md:grid-cols-3 gap-8">
+            <div className="md:col-span-2 space-y-6">
+              <div className="flex gap-4">
+                <div className="w-12 h-12 rounded-xl bg-muted animate-pulse shrink-0" />
+                <div className="space-y-2 flex-1">
+                  <div className="h-8 w-3/4 bg-muted rounded animate-pulse" />
+                  <div className="h-4 w-1/3 bg-muted rounded animate-pulse" />
+                </div>
+              </div>
+              <div className="h-48 bg-muted rounded-xl animate-pulse" />
+              <div className="h-36 bg-muted rounded-xl animate-pulse" />
+            </div>
+            <div className="h-64 bg-muted rounded-xl animate-pulse" />
+          </div>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   if (error || !listing) {
     return (
-      <div className="container mx-auto px-4 py-8 text-center">
-        <h2 className="text-xl font-semibold text-destructive">Listing not found</h2>
-        <Button variant="outline" className="mt-4" asChild>
-          <Link href="/marketplace">Back to Marketplace</Link>
-        </Button>
-      </div>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="container mx-auto px-4 py-8">
+        <div className="max-w-md mx-auto text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-destructive/10 flex items-center justify-center">
+            <span className="text-destructive text-2xl font-bold">!</span>
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Listing Not Found</h2>
+          <p className="text-muted-foreground mb-6">This listing may have been removed or doesn&apos;t exist.</p>
+          <Button asChild>
+            <Link href="/marketplace">Back to Marketplace</Link>
+          </Button>
+        </div>
+      </motion.div>
     );
   }
 
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        <Button variant="ghost" className="mb-6 pl-0" asChild>
-          <Link href="/marketplace">
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back to Marketplace
-          </Link>
-        </Button>
+  const isActive = listing.status === "active";
+  const quotaUsed = listing.max_calls - listing.remaining_calls;
+  const quotaPercent = listing.max_calls > 0 ? Math.round((quotaUsed / listing.max_calls) * 100) : 0;
+  const gatewayUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${listing.delegation_id || "{delegation_id}"}/chat`;
+  const providerName = listing.provider?.name || (listing.provider?.wallet_address
+    ? `${listing.provider.wallet_address.slice(0, 6)}...${listing.provider.wallet_address.slice(-4)}`
+    : "Unknown");
 
-        <div className="grid md:grid-cols-3 gap-8">
-          <div className="md:col-span-2 space-y-6">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl font-bold">{listing.name}</h1>
-                <Badge variant={listing.status === "active" ? "success" : "secondary"}>
-                  {listing.status}
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">
-                Provided by {listing.provider?.name || listing.provider?.wallet_address}
-              </p>
+  return (
+    <div className="relative min-h-screen">
+      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+        <div className="absolute -top-40 -right-40 w-[30rem] h-[30rem] bg-purple-500/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-[25rem] h-[25rem] bg-indigo-500/10 rounded-full blur-3xl" />
+      </div>
+
+      <div className="container mx-auto px-4 py-8 pb-24 md:pb-8">
+        <div className="max-w-4xl mx-auto">
+          <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
+            <Button variant="ghost" className="mb-6 -ml-3 text-muted-foreground hover:text-foreground" asChild>
+              <Link href="/marketplace">
+                <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Marketplace
+              </Link>
+            </Button>
+          </motion.div>
+
+          <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid md:grid-cols-3 gap-8">
+            <div className="md:col-span-2 space-y-8">
+              <motion.div variants={itemVariants}>
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shrink-0 shadow-lg shadow-purple-500/20">
+                    {providerName[0]?.toUpperCase() || "A"}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{listing.name}</h1>
+                      <Badge variant={isActive ? "success" : "secondary"} className="gap-1.5">
+                        {isActive && (
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                          </span>
+                        )}
+                        {listing.status}
+                      </Badge>
+                    </div>
+                    <p className="text-muted-foreground mt-1 text-sm">by {providerName}</p>
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.div variants={itemVariants}>
+                <Card className="overflow-hidden border-purple-500/5">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                      About
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                      {listing.description || "No description provided."}
+                    </p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div variants={itemVariants}>
+                <Card className="overflow-hidden border-purple-500/5">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Terminal className="h-4 w-4 text-purple-500" />
+                      API Specifications
+                    </CardTitle>
+                    <CardDescription>Gateway and parameter details for integration</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</p>
+                        <p className="font-semibold">{listing.model_name}</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gateway Endpoint</p>
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 text-xs bg-muted px-2 py-1 rounded border truncate">
+                            {gatewayUrl}
+                          </code>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCopyEndpoint}>
+                            {copiedEndpoint ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Max Input</p>
+                        <p className="font-semibold">{listing.max_input_chars.toLocaleString()} chars</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Max Output</p>
+                        <p className="font-semibold">{listing.max_completion_tokens.toLocaleString()} tokens</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Delegation ID</p>
+                        <p className="font-semibold font-mono text-sm truncate" title={listing.delegation_id || undefined}>
+                          {listing.delegation_id ? `${listing.delegation_id.slice(0, 8)}...` : "\u2014"}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Network</p>
+                        <p className="font-semibold">Base Sepolia</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Description</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="whitespace-pre-wrap">{listing.description || "No description provided."}</p>
-              </CardContent>
-            </Card>
+            <motion.div variants={itemVariants}>
+              <div className="md:sticky md:top-24 space-y-4">
+                <Card className="border-purple-500/10 shadow-lg shadow-purple-500/5 md:backdrop-blur-xl md:bg-background/80">
+                  <CardContent className="p-6 space-y-6">
+                    <div className="text-center pb-4 border-b">
+                      <p className="text-4xl font-bold text-primary">
+                        ${formatPrice(parseFloat(listing.price_per_call_usdc))}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">per request</p>
+                    </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>API Details</CardTitle>
-                <CardDescription>Gateway and parameter specifications</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Model Name</p>
-                    <p className="font-mono mt-1">{listing.model_name}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Gateway Base URL</p>
-                    <p className="font-mono mt-1 text-sm break-all">
-                       {process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/{listing.delegation_id || "{delegation_id}"}/chat
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Max Input Chars</p>
-                    <p className="mt-1">{listing.max_input_chars}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Max Completion Tokens</p>
-                    <p className="mt-1">{listing.max_completion_tokens}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Quota Used</span>
+                        <span className="font-medium tabular-nums">{quotaUsed} / {listing.max_calls}</span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <motion.div
+                          className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${quotaPercent}%` }}
+                          transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{listing.remaining_calls} remaining</span>
+                        <span>{quotaPercent}% used</span>
+                      </div>
+                    </div>
 
+                    <div className="flex items-center gap-3 text-sm">
+                      <Timer className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground">Expires</span>
+                      <span className="font-medium ml-auto">{new Date(listing.expires_at).toLocaleDateString()}</span>
+                    </div>
+
+                    <div className="pt-2 space-y-3">
+                      {!isConnected ? (
+                        <Button className="w-full h-11 gap-2" disabled>
+                          <Wallet className="h-4 w-4" />
+                          Connect Wallet to Purchase
+                        </Button>
+                      ) : granted ? (
+                        <Button variant="outline" className="w-full h-11 gap-2" disabled>
+                          <Check className="h-4 w-4 text-green-500" /> Access Granted
+                        </Button>
+                      ) : !isActive ? (
+                        <Button className="w-full h-11" disabled>Listing Inactive</Button>
+                      ) : (
+                        <GrantPermissionButton
+                          listingId={listing.id}
+                          sessionAccountAddress={SERVER_ACCOUNT}
+                          onSuccess={handlePermissionGranted}
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground pt-2">
+                      <span className="flex items-center gap-1">
+                        <Shield className="h-3 w-3" /> Secure Payment
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Zap className="h-3 w-3" /> Instant Access
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </motion.div>
+          </motion.div>
+        </div>
+      </div>
+
+      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-lg p-4 z-50">
+        <div className="flex items-center justify-between max-w-4xl mx-auto">
           <div>
-            <Card className="sticky top-24">
-              <CardHeader>
-                <CardTitle>Purchase Access</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <p className="text-3xl font-bold text-primary">
-                    ${formatPrice(parseFloat(listing.price_per_call_usdc))}
-                  </p>
-                  <p className="text-sm text-muted-foreground">per request (USDC)</p>
-                </div>
-                
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Remaining Calls</span>
-                    <span className="font-medium">{listing.remaining_calls} / {listing.max_calls}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Expires</span>
-                    <span className="font-medium">{new Date(listing.expires_at).toLocaleDateString()}</span>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t">
-                  {!isConnected ? (
-                    <Button className="w-full" disabled>Connect Wallet to Purchase</Button>
-                  ) : granted ? (
-                    <Button variant="outline" className="w-full" disabled>
-                      <Check className="h-4 w-4 mr-2" /> Access Granted
-                    </Button>
-                  ) : listing.status !== "active" ? (
-                    <Button className="w-full" disabled>Listing Inactive</Button>
-                  ) : (
-                    <GrantPermissionButton
-                      listingId={listing.id}
-                      sessionAccountAddress={SERVER_ACCOUNT}
-                      onSuccess={handlePermissionGranted}
-                    />
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <p className="text-lg font-bold text-primary">
+              ${formatPrice(parseFloat(listing.price_per_call_usdc))}
+            </p>
+            <p className="text-xs text-muted-foreground">per request</p>
+          </div>
+          <div className="min-w-0 max-w-[180px]">
+            {!isConnected ? (
+              <Button className="w-full h-10 text-sm" disabled>Connect</Button>
+            ) : granted ? (
+              <Button variant="outline" className="w-full h-10 text-sm gap-1.5" disabled>
+                <Check className="h-4 w-4" /> Granted
+              </Button>
+            ) : !isActive ? (
+              <Button className="w-full h-10 text-sm" disabled>Inactive</Button>
+            ) : (
+              <GrantPermissionButton
+                listingId={listing.id}
+                sessionAccountAddress={SERVER_ACCOUNT}
+                onSuccess={handlePermissionGranted}
+              />
+            )}
           </div>
         </div>
       </div>

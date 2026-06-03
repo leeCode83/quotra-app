@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyJWT } from "@/lib/jwt";
 import { listingSchema } from "@/lib/validators";
 
@@ -32,7 +33,7 @@ async function verifyListingOwnership(
   const { data: provider } = await supabase
     .from("providers")
     .select("id")
-    .eq("wallet_address", walletAddress)
+    .ilike("wallet_address", walletAddress)
     .single();
 
   if (!provider) {
@@ -111,7 +112,7 @@ export async function PATCH(
     }
 
     const { id } = await context.params;
-    const supabase = await createClient();
+    const supabase = supabaseAdmin;
     const ownership = await verifyListingOwnership(
       supabase,
       id,
@@ -200,7 +201,7 @@ export async function DELETE(
     }
 
     const { id } = await context.params;
-    const supabase = await createClient();
+    const supabase = supabaseAdmin;
     const ownership = await verifyListingOwnership(
       supabase,
       id,

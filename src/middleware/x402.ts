@@ -148,7 +148,7 @@ export function withX402<T = PaymentContext>(
       const { data: consumer } = await supabase
         .from("consumers")
         .select("id")
-        .eq("wallet_address", consumerWalletAddress)
+        .ilike("wallet_address", consumerWalletAddress)
         .single();
 
       consumerId = consumer?.id ?? null;

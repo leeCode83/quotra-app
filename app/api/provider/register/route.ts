@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const { data: existingProvider } = await supabase
       .from("providers")
       .select("id, name")
-      .eq("wallet_address", walletAddress)
+      .ilike("wallet_address", walletAddress)
       .maybeSingle();
 
     let providerId = existingProvider?.id;

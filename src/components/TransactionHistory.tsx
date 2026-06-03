@@ -1,16 +1,19 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { formatPrice } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { formatPrice, cn } from "@/lib/utils"
+import { ExternalLink } from "lucide-react"
 
 export interface Transaction {
   id: string
   txHash: string
   amountUsdc: string | number
-  modelName: string
-  status: "pending" | "completed" | "refund_pending" | "refunded"
+  modelName?: string
+  status: "pending" | "completed" | "refund_pending" | "refunded" | "failed" | string
   timestamp: string
   completedAt?: string
+  type?: "income" | "expense"
 }
 
 interface TransactionHistoryProps {
@@ -51,21 +54,34 @@ export function TransactionHistory({ transactions, title = "Recent Transactions"
                   <td className="px-4 py-3">
                     {new Date(tx.timestamp).toLocaleDateString()} {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs truncate max-w-[150px]">
-                    <a 
-                      href={`https://sepolia.basescan.org/tx/${tx.txHash}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
+                  <td className="px-4 py-3 font-mono text-xs flex items-center gap-2">
+                    <span className="truncate max-w-[120px]" title={tx.txHash}>
                       {tx.txHash.substring(0, 10)}...{tx.txHash.slice(-8)}
-                    </a>
+                    </span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" asChild>
+                      <a 
+                        href={`https://base-sepolia.blockscout.com/tx/${tx.txHash}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        title="View on Blockscout"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        <span className="sr-only">View on Blockscout</span>
+                      </a>
+                    </Button>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant="outline" className="font-normal">{tx.modelName}</Badge>
+                    {tx.modelName ? (
+                      <Badge variant="outline" className="font-normal">{tx.modelName}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </td>
-                  <td className="px-4 py-3 font-medium text-green-600 dark:text-green-400">
-                    +${formatPrice(amount)}
+                  <td className={cn(
+                    "px-4 py-3 font-medium",
+                    tx.type === "expense" ? "text-destructive" : "text-green-600 dark:text-green-400"
+                  )}>
+                    {tx.type === "expense" ? "-" : "+"}${formatPrice(amount)}
                   </td>
                   <td className="px-4 py-3">
                     <Badge 

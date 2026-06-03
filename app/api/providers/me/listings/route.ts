@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const { data: provider } = await supabase
       .from("providers")
       .select("id")
-      .eq("wallet_address", walletAddress)
+      .ilike("wallet_address", walletAddress)
       .single();
 
     if (!provider) {

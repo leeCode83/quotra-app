@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     const { data: provider, error: providerError } = await supabase
       .from("providers")
       .select("id, wallet_address")
-      .eq("wallet_address", walletAddress)
+      .ilike("wallet_address", walletAddress)
       .single();
 
     if (providerError || !provider) {

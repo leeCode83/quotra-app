@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const { data: provider, error: providerError } = await supabase
       .from("providers")
       .select("id, name, pending_earnings_usdc, total_earned_usdc")
-      .eq("wallet_address", walletAddress)
+      .ilike("wallet_address", walletAddress)
       .single();
 
     if (providerError) {
@@ -100,6 +100,25 @@ export async function GET(request: NextRequest) {
       }));
     }
 
+    // Fetch claim history (for withdrawals tab)
+    const { data: claimData, error: claimError } = await supabase
+      .from("claim_history")
+      .select("id, tx_hash, amount_usdc, status, created_at, completed_at")
+      .eq("provider_id", provider.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (claimError) throw claimError;
+
+    const claims = (claimData || []).map(claim => ({
+      id: claim.id,
+      txHash: claim.tx_hash,
+      amountUsdc: claim.amount_usdc,
+      status: claim.status,
+      timestamp: claim.created_at,
+      completedAt: claim.completed_at
+    }));
+
     return NextResponse.json({
       success: true,
       provider: {
@@ -120,7 +139,8 @@ export async function GET(request: NextRequest) {
         status: l.status,
         delegationId: l.delegation_id
       })),
-      transactions
+      transactions,
+      claims
     });
   } catch (err) {
     return NextResponse.json(

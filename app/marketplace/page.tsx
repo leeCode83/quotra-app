@@ -3,18 +3,21 @@
 import { useState, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { Search, Filter, Grid3X3, List, Check } from "lucide-react";
+import { Search, Filter, Grid3X3, List, Check, Clock, Cpu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ListingCard } from "@/components/ListingCard";
 import { GrantPermissionButton } from "@/components/GrantPermissionButton";
 import { ConsumerTokenModal } from "@/components/ConsumerTokenModal";
 const SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Address;
-import { cn, formatPrice } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import NumberFlow from "@number-flow/react";
 import { createClient } from "@/lib/supabase-client";
+import Link from "next/link";
 import type { Address } from "viem";
 import type { ListingWithProvider } from "@/types";
 
@@ -159,11 +162,36 @@ export default function MarketplacePage() {
       </div>
 
       {isLoading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <ListingCard key={i} isLoading />
-          ))}
-        </div>
+        viewMode === "grid" ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <ListingCard key={i} isLoading />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex flex-col md:flex-row rounded-2xl lg:rounded-3xl border border-foreground/10 overflow-hidden">
+                <div className="flex flex-col gap-3 p-4 md:p-6 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-5 w-48" />
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                  </div>
+                  <Skeleton className="h-4 w-72" />
+                  <Skeleton className="h-4 w-full" />
+                  <div className="flex gap-4">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-3 w-28" />
+                  </div>
+                </div>
+                <div className="flex flex-row md:flex-col items-center justify-between md:justify-center gap-3 p-4 md:p-6 shrink-0 border-t md:border-t-0 md:border-l border-foreground/10">
+                  <Skeleton className="h-8 w-20" />
+                  <Skeleton className="h-9 w-28" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       )}
 
       {error && (
@@ -195,57 +223,108 @@ export default function MarketplacePage() {
         )}>
           {filteredListings.map((listing: ListingWithProvider) =>
             viewMode === "grid" ? (
-              <div key={listing.id} className="flex flex-col gap-2">
-                <ListingCard listing={listing} />
-                {isConnected && (
-                  grantedListingIds.has(listing.id) ? (
-                    <Button size="sm" variant="outline" disabled>
-                      <Check className="h-4 w-4 mr-1" /> Granted
-                    </Button>
-                  ) : (
-                    <GrantPermissionButton
-                      listingId={listing.id}
-                      sessionAccountAddress={SERVER_ACCOUNT}
-                      onSuccess={(result) => handlePermissionGranted(listing.id, listing.delegation_id ?? undefined, result)}
-                    />
-                  )
-                )}
-              </div>
-            ) : (
-              <Card key={listing.id} className="flex flex-col md:flex-row md:items-center">
-                <CardHeader className="pb-2 md:pb-0 md:flex-1">
-                  <div className="flex items-center gap-2">
-                    <CardTitle className="text-base">{listing.name}</CardTitle>
-                    {listing.status === "active" ? (
-                      <Badge variant="success" className="text-xs">Active</Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-xs">Inactive</Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {listing.provider?.wallet_address ? `${listing.provider.wallet_address.slice(0,6)}...${listing.provider.wallet_address.slice(-4)}` : "Unknown"} · {listing.model_name}
-                  </p>
-                </CardHeader>
-                <CardContent className="md:w-48 md:text-right">
-                  <p className="font-semibold text-primary">{formatPrice(parseFloat(listing.price_per_call_usdc))}</p>
-                  <p className="text-xs text-muted-foreground">per request</p>
+              <div key={listing.id} className="h-full">
+                <ListingCard listing={listing}>
                   {isConnected && (
-                    <div className="mt-2">
-                      {grantedListingIds.has(listing.id) ? (
-                        <Button size="sm" variant="outline" disabled className="w-full">
-                          <Check className="h-4 w-4 mr-1" /> Granted
-                        </Button>
-                      ) : (
+                    grantedListingIds.has(listing.id) ? (
+                      <Button size="lg" variant="outline" disabled className="w-full">
+                        <Check className="h-4 w-4 mr-1" /> Granted
+                      </Button>
+                    ) : (
+                      <div className="w-full [&>button]:w-full [&>button]:h-10">
                         <GrantPermissionButton
                           listingId={listing.id}
                           sessionAccountAddress={SERVER_ACCOUNT}
                           onSuccess={(result) => handlePermissionGranted(listing.id, listing.delegation_id ?? undefined, result)}
                         />
+                      </div>
+                    )
+                  )}
+                </ListingCard>
+              </div>
+            ) : (
+              <div key={listing.id} className="flex flex-col md:flex-row relative rounded-2xl lg:rounded-3xl transition-all duration-300 bg-background items-stretch w-full border border-foreground/10 overflow-hidden hover:border-primary/30 hover:shadow-lg hover:-translate-y-0.5 group">
+                <div className="absolute top-1/2 inset-x-0 mx-auto h-12 -rotate-45 w-1/2 bg-primary/40 rounded-2xl lg:rounded-3xl blur-[8rem] -z-10" />
+
+                <div className="flex flex-col justify-center gap-1.5 p-4 md:p-6 flex-1 min-w-0">
+                  <div className="flex items-start gap-2">
+                    <h3 className="font-medium text-base md:text-lg text-foreground truncate" title={listing.name}>
+                      {listing.name}
+                    </h3>
+                    <Badge variant={listing.status === "active" ? "success" : "secondary"} className="shrink-0 uppercase text-[10px] tracking-wider">
+                      {listing.status === "active" ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className={`h-1.5 w-1.5 rounded-full ${listing.status === "active" ? "bg-green-500" : "bg-gray-400"}`} />
+                    <span className="font-mono">{listing.provider?.wallet_address ? `${listing.provider.wallet_address.slice(0,6)}...${listing.provider.wallet_address.slice(-4)}` : "Unknown"}</span>
+                    <span className="text-foreground/20">·</span>
+                    <span className="flex items-center gap-1">
+                      <Cpu className="h-3 w-3" />
+                      {listing.model_name}
+                    </span>
+                  </div>
+
+                  {listing.description && (
+                    <p className="text-xs md:text-sm text-muted-foreground line-clamp-1">
+                      {listing.description}
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span>{Number(listing.remaining_calls)} / {Number(listing.max_calls)} calls</span>
+                    <span className="text-foreground/20">·</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Exp {new Date(listing.expires_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-row md:flex-col items-center justify-between md:justify-center gap-2 p-4 md:p-6 shrink-0 border-t md:border-t-0 md:border-l border-foreground/10 md:min-w-[140px]">
+                  <div className="flex items-baseline gap-1">
+                    <NumberFlow
+                      value={parseFloat(listing.price_per_call_usdc)}
+                      format={{
+                        style: "currency",
+                        currency: "USD",
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 4,
+                      }}
+                      className="text-lg md:text-xl font-bold tracking-tight text-primary"
+                    />
+                    <span className="text-xs text-muted-foreground">/req</span>
+                  </div>
+
+                  {isConnected && (
+                    <div className="w-full md:w-auto">
+                      {grantedListingIds.has(listing.id) ? (
+                        <Button size="sm" variant="outline" disabled className="w-full md:w-28 h-8 text-xs">
+                          <Check className="h-3 w-3 mr-1" /> Granted
+                        </Button>
+                      ) : (
+                        <div className="w-full [&>button]:w-full md:[&>button]:w-28 [&>button]:h-8 [&>button]:text-xs">
+                          <GrantPermissionButton
+                            listingId={listing.id}
+                            sessionAccountAddress={SERVER_ACCOUNT}
+                            onSuccess={(result) => handlePermissionGranted(listing.id, listing.delegation_id ?? undefined, result)}
+                          />
+                        </div>
                       )}
                     </div>
                   )}
-                </CardContent>
-              </Card>
+
+                  <div className="flex gap-2 w-full md:w-auto">
+                    <Button variant="outline" size="sm" className="flex-1 md:flex-none h-8 text-xs" asChild>
+                      <Link href={`/marketplace/${listing.id}`}>View</Link>
+                    </Button>
+                    <Button variant="secondary" size="sm" className="flex-1 md:flex-none h-8 text-xs" asChild>
+                      <Link href={`/marketplace/${listing.id}`}>API</Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )
           )}
         </div>

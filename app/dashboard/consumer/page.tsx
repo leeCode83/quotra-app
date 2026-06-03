@@ -25,25 +25,54 @@ export default function ConsumerDashboardPage() {
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokePermId, setRevokePermId] = useState<string | null>(null);
 
-  const { data: permissions = [], isLoading: permsLoading, error: permsError } = useQuery<ConsumerPermission[]>({
-    queryKey: ["permissions"],
+  const [txPage, setTxPage] = useState(1);
+  const txPerPage = 10;
+
+  const { data: consumer, isLoading: consumerLoading } = useQuery({
+    queryKey: ["consumer", session.address],
     queryFn: async () => {
+      if (!session.address) return null;
       const supabase = createClient();
-      const { data, error } = await supabase.from("consumer_permissions").select("*");
-      if (error) throw error;
+      const { data, error } = await supabase.from("consumers").select("*").ilike("wallet_address", session.address).single();
+      if (error && error.code !== 'PGRST116') throw error;
       return data;
     },
+    enabled: !!session.address,
   });
 
-  const { data: transactions = [], isLoading: txLoading, error: txError } = useQuery<Transaction[]>({
-    queryKey: ["transactions"],
+  const { data: permissions = [], isLoading: permsLoading, error: permsError } = useQuery<ConsumerPermission[]>({
+    queryKey: ["permissions", consumer?.id],
     queryFn: async () => {
+      if (!consumer?.id) return [];
       const supabase = createClient();
-      const { data, error } = await supabase.from("transactions").select("*");
+      const { data, error } = await supabase.from("consumer_permissions").select("*").eq("consumer_id", consumer.id);
       if (error) throw error;
       return data;
     },
+    enabled: !!consumer?.id,
   });
+
+  const { data: txData, isLoading: txLoading, error: txError } = useQuery({
+    queryKey: ["transactions", consumer?.id, txPage],
+    queryFn: async () => {
+      if (!consumer?.id) return { data: [], count: 0 };
+      const supabase = createClient();
+      const from = (txPage - 1) * txPerPage;
+      const to = from + txPerPage - 1;
+      const { data, error, count } = await supabase
+        .from("transactions")
+        .select("*", { count: "exact" })
+        .eq("consumer_id", consumer.id)
+        .order("created_at", { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return { data: data as Transaction[], count: count || 0 };
+    },
+    enabled: !!consumer?.id,
+  });
+
+  const transactions = txData?.data || [];
+  const txTotalCount = txData?.count || 0;
 
   const { data: listings = [] } = useQuery<Listing[]>({
     queryKey: ["consumer-listings"],
@@ -94,7 +123,7 @@ export default function ConsumerDashboardPage() {
     );
   }
 
-  const isLoading = permsLoading || txLoading;
+  const isLoading = consumerLoading || permsLoading || txLoading;
   const queryError = permsError || txError;
 
   if (isLoading) {
@@ -130,9 +159,7 @@ export default function ConsumerDashboardPage() {
     );
   }
 
-  const totalSpent = transactions
-    .filter((t) => t.status === "completed") // Note: updated from 'confirmed' to 'completed' based on DB enum
-    .reduce((sum, t: Transaction) => sum + parseFloat(t.amount_usdc || "0"), 0);
+  const totalSpent = consumer ? parseFloat(consumer.total_spent_usdc || "0") : 0;
 
   const activePermissions = permissions.filter(p => p.status === "active");
 
@@ -143,7 +170,8 @@ export default function ConsumerDashboardPage() {
     modelName: listings.find(l => l.id === tx.listing_id)?.model_name || "Unknown",
     status: tx.status as "pending" | "completed" | "refund_pending" | "refunded",
     timestamp: tx.created_at,
-    completedAt: tx.completed_at
+    completedAt: tx.completed_at,
+    type: "expense"
   }));
 
   return (
@@ -185,11 +213,11 @@ export default function ConsumerDashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Transactions</CardDescription>
-            <CardTitle className="text-2xl">{transactions.length}</CardTitle>
+            <CardTitle className="text-2xl">{txTotalCount}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              {transactions.filter((t) => t.status === "completed").length} completed
+              Total transaction records
             </p>
           </CardContent>
         </Card>
@@ -198,7 +226,7 @@ export default function ConsumerDashboardPage() {
       <Tabs defaultValue="permissions" className="space-y-4">
         <TabsList>
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
+          <TabsTrigger value="transactions">Purchase History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="permissions" className="space-y-4">
@@ -274,7 +302,29 @@ export default function ConsumerDashboardPage() {
         </TabsContent>
 
         <TabsContent value="transactions" className="space-y-4">
-          <TransactionHistory transactions={formattedTransactions} title="Your Transactions" />
+          <TransactionHistory transactions={formattedTransactions} title="Purchase History" />
+          
+          {txTotalCount > txPerPage && (
+            <div className="flex justify-between items-center mt-4 bg-card p-4 rounded-md border border-border">
+              <Button 
+                variant="outline" 
+                onClick={() => setTxPage(p => Math.max(1, p - 1))} 
+                disabled={txPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground font-medium">
+                Page {txPage} of {Math.ceil(txTotalCount / txPerPage)}
+              </span>
+              <Button 
+                variant="outline" 
+                onClick={() => setTxPage(p => p + 1)} 
+                disabled={txPage >= Math.ceil(txTotalCount / txPerPage)}
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { createWalletClient, custom, type Address } from "viem"
+import { createWalletClient, custom, parseEther, type Address } from "viem"
 import { baseSepolia } from "viem/chains"
 import { erc7715ProviderActions } from "@metamask/smart-accounts-kit/actions"
 import { Button } from "@/components/ui/button"
@@ -52,7 +52,7 @@ export function GrantPermissionButton({
             type: "native-token-allowance",
             isAdjustmentAllowed: false,
             data: {
-              allowanceAmount: 0n,
+              allowanceAmount: parseEther("0.01"),
             },
           },
         },
@@ -74,7 +74,7 @@ export function GrantPermissionButton({
       }
 
       const data = await res.json();
-      onSuccess?.({ permissionId: data.permissionId, expiresAt: data.expiresAt, jwt: data.token });
+      onSuccess?.({ permissionId: data.permissionId, expiresAt: data.expiresAt, jwt: data.consumerToken });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to grant permission")
     } finally {
