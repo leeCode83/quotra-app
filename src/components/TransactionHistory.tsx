@@ -7,7 +7,7 @@ import { ExternalLink } from "lucide-react"
 
 export interface Transaction {
   id: string
-  txHash: string
+  txHash?: string
   amountUsdc: string | number
   modelName?: string
   status: "pending" | "completed" | "refund_pending" | "refunded" | "failed" | string
@@ -55,20 +55,26 @@ export function TransactionHistory({ transactions, title = "Recent Transactions"
                     {new Date(tx.timestamp).toLocaleDateString()} {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs flex items-center gap-2">
-                    <span className="truncate max-w-[120px]" title={tx.txHash}>
-                      {tx.txHash.substring(0, 10)}...{tx.txHash.slice(-8)}
-                    </span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" asChild>
-                      <a 
-                        href={`https://base-sepolia.blockscout.com/tx/${tx.txHash}`} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        title="View on Blockscout"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        <span className="sr-only">View on Blockscout</span>
-                      </a>
-                    </Button>
+                    {tx.txHash ? (
+                      <>
+                        <span className="truncate max-w-[120px]" title={tx.txHash}>
+                          {tx.txHash.substring(0, 10)}...{tx.txHash.slice(-8)}
+                        </span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" asChild>
+                          <a 
+                            href={`https://base-sepolia.blockscout.com/tx/${tx.txHash}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            title="View on Blockscout"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            <span className="sr-only">View on Blockscout</span>
+                          </a>
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground italic">x402 settled</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {tx.modelName ? (

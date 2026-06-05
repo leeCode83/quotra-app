@@ -1,33 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { verifyJWT } from "@/lib/jwt";
-
-function getAuthToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return null;
-  const parts = authHeader.split(" ");
-  if (parts.length === 2 && parts[0].toLowerCase() === "bearer") return parts[1];
-  return null;
-}
-
-async function getWalletAddress(request: NextRequest): Promise<string | null> {
-  const token = getAuthToken(request);
-  if (!token) return null;
-  try {
-    const payload = await verifyJWT(token);
-    const wallet = payload.wallet_address;
-    if (typeof wallet === "string") return wallet.toLowerCase();
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 export async function GET(request: NextRequest) {
   try {
-    const walletAddress = await getWalletAddress(request);
+    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
     if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
     }
 
     const supabase = await createClient();

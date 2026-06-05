@@ -1,37 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { verifyJWT } from "@/lib/jwt";
 import { executeMethod } from "@/lib/oneshot";
-
-function getAuthToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return null;
-  const parts = authHeader.split(" ");
-  if (parts.length === 2 && parts[0].toLowerCase() === "bearer") return parts[1];
-  return null;
-}
-
-async function getWalletAddress(request: NextRequest): Promise<string | null> {
-  const token = getAuthToken(request);
-  if (!token) return null;
-  try {
-    const payload = await verifyJWT(token);
-    const wallet = payload.wallet_address;
-    if (typeof wallet === "string") return wallet.toLowerCase();
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
-    const walletAddress = await getWalletAddress(request);
+    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
     if (!walletAddress) {
-      return NextResponse.json(
-        { error: "Unauthorized: valid JWT required" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
     }
 
     const supabase = await createClient();
@@ -43,10 +18,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (providerError || !provider) {
-      return NextResponse.json(
-        { error: "Provider not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
     }
 
     const { data: listings } = await supabase
@@ -117,10 +89,7 @@ export async function POST(request: NextRequest) {
       });
     } catch (txErr) {
       return NextResponse.json(
-        {
-          error: "USDC transfer failed",
-          details: txErr instanceof Error ? txErr.message : "Unknown error",
-        },
+        { error: "USDC transfer failed", details: txErr instanceof Error ? txErr.message : "Unknown error" },
         { status: 502 }
       );
     }
@@ -136,10 +105,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       return NextResponse.json(
-        {
-          error: "Failed to record claim",
-          details: insertError.message,
-        },
+        { error: "Failed to record claim", details: insertError.message },
         { status: 500 }
       );
     }
@@ -151,10 +117,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: err instanceof Error ? err.message : "Unknown error",
-      },
+      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }

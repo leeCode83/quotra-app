@@ -1,29 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { verifyJWT } from "@/lib/jwt";
 import { listingSchema } from "@/lib/validators";
 import { executeAsDelegator } from "@/lib/oneshot";
-
-function getAuthToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return null;
-  const parts = authHeader.split(" ");
-  if (parts.length === 2 && parts[0].toLowerCase() === "bearer") return parts[1];
-  return null;
-}
-
-async function getWalletAddress(request: NextRequest): Promise<string | null> {
-  const token = getAuthToken(request);
-  if (!token) return null;
-  try {
-    const payload = await verifyJWT(token);
-    const wallet = payload.wallet_address;
-    if (typeof wallet === "string") return wallet.toLowerCase();
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 export async function GET() {
   try {
@@ -46,7 +24,7 @@ export async function GET() {
 
     const formatted = (listings ?? []).map((item: Record<string, unknown>) => {
       const wallet = (item.providers as Array<Record<string, unknown>>)?.[0]?.wallet_address as string | undefined;
-      const providerWallet = wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : null;
+      const providerWallet = wallet ? wallet.slice(0, 6) + "..." + wallet.slice(-4) : null;
 
       return {
         id: item.id,
@@ -64,10 +42,7 @@ export async function GET() {
     return NextResponse.json({ success: true, listings: formatted });
   } catch (err) {
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: err instanceof Error ? err.message : "Unknown error",
-      },
+      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }
@@ -75,12 +50,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const walletAddress = await getWalletAddress(request);
+    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
     if (!walletAddress) {
-      return NextResponse.json(
-        { error: "Unauthorized: valid JWT required" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
     }
 
     const supabase = await createClient();
@@ -91,10 +63,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (providerError || !provider) {
-      return NextResponse.json(
-        { error: "Provider not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
     }
 
     const body = await request.json();
@@ -107,10 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (parseResult.data.provider_id !== provider.id) {
-      return NextResponse.json(
-        { error: "Forbidden: provider ID mismatch" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Forbidden: provider ID mismatch" }, { status: 403 });
     }
 
     const data = parseResult.data;
@@ -157,16 +123,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json(
-      { success: true, listing },
-      { status: 201 }
-    );
+    return NextResponse.json({ success: true, listing }, { status: 201 });
   } catch (err) {
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: err instanceof Error ? err.message : "Unknown error",
-      },
+      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }

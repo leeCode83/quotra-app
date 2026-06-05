@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { Search, Filter, Grid3X3, List, Check, Clock, Cpu } from "lucide-react";
+import { Search, Filter, Grid3X3, List, Clock, Cpu, Beaker } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,14 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ListingCard } from "@/components/ListingCard";
-import { GrantPermissionButton } from "@/components/GrantPermissionButton";
-import { ConsumerTokenModal } from "@/components/ConsumerTokenModal";
-const SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Address;
 import { cn } from "@/lib/utils";
 import NumberFlow from "@number-flow/react";
 import { createClient } from "@/lib/supabase-client";
 import Link from "next/link";
-import type { Address } from "viem";
 import type { ListingWithProvider } from "@/types";
 
 const SORT_OPTIONS = ["newest", "oldest", "price-low", "price-high"] as const;
@@ -27,10 +23,8 @@ export default function MarketplacePage() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [modalData, setModalData] = useState<{ open: boolean; jwt: string; endpoint: string; expiresAt: string } | null>(null);
 
   const { isConnected } = useAccount();
-  const queryClient = useQueryClient();
 
   const { data: listings = [], isLoading, error } = useQuery<ListingWithProvider[]>({
     queryKey: ["marketplace-listings"],
@@ -41,40 +35,6 @@ export default function MarketplacePage() {
       return data as ListingWithProvider[];
     },
   });
-
-  const [grantedListingIds] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    const stored = localStorage.getItem("quotra_permissions");
-    if (!stored) return new Set();
-    try {
-      const perms = JSON.parse(stored) as Array<{ listingId: string; jwt: string; expiresAt: string }>;
-      const now = new Date().toISOString();
-      const active = perms.filter((p) => p.expiresAt > now);
-      return new Set(active.map((p) => p.listingId));
-    } catch {
-      return new Set();
-    }
-  });
-
-  const handlePermissionGranted = useCallback(
-    (listingId: string, delegationId: string | undefined, result: { jwt: string; expiresAt: string; permissionId?: string }) => {
-      const stored = localStorage.getItem("quotra_permissions");
-      const perms = stored ? JSON.parse(stored) : [];
-      perms.push({ listingId, jwt: result.jwt, expiresAt: result.expiresAt });
-      localStorage.setItem("quotra_permissions", JSON.stringify(perms));
-      queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] });
-
-      // We need to infer delegation_id from the listing
-      const endpoint = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${delegationId || result.permissionId || "delegation-id"}/chat`;
-      setModalData({
-        open: true,
-        jwt: result.jwt,
-        endpoint,
-        expiresAt: result.expiresAt
-      });
-    },
-    [queryClient]
-  );
 
   const filteredListings = useMemo(() => {
     let result = [...listings];
@@ -113,7 +73,7 @@ export default function MarketplacePage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Marketplace</h1>
         <p className="text-muted-foreground mt-1">
-          Browse and discover AI model endpoints available for direct access
+          Browse and discover AI model endpoints available for direct pay-per-call access
         </p>
       </div>
 
@@ -225,20 +185,12 @@ export default function MarketplacePage() {
             viewMode === "grid" ? (
               <div key={listing.id} className="h-full">
                 <ListingCard listing={listing}>
-                  {isConnected && (
-                    grantedListingIds.has(listing.id) ? (
-                      <Button size="lg" variant="outline" disabled className="w-full">
-                        <Check className="h-4 w-4 mr-1" /> Granted
-                      </Button>
-                    ) : (
-                      <div className="w-full [&>button]:w-full [&>button]:h-10">
-                        <GrantPermissionButton
-                          listingId={listing.id}
-                          sessionAccountAddress={SERVER_ACCOUNT}
-                          onSuccess={(result) => handlePermissionGranted(listing.id, listing.delegation_id ?? undefined, result)}
-                        />
-                      </div>
-                    )
+                  {isConnected && listing.delegation_id && (
+                    <Button size="lg" className="w-full gap-2" asChild>
+                      <Link href={"/playground/" + listing.id}>
+                        <Beaker className="h-4 w-4" /> Try Now
+                      </Link>
+                    </Button>
                   )}
                 </ListingCard>
               </div>
@@ -251,15 +203,15 @@ export default function MarketplacePage() {
                     <h3 className="font-medium text-base md:text-lg text-foreground truncate" title={listing.name}>
                       {listing.name}
                     </h3>
-                    <Badge variant={listing.status === "active" ? "success" : "secondary"} className="shrink-0 uppercase text-[10px] tracking-wider">
+                    <Badge variant={listing.status === "active" ? "default" : "secondary"} className="shrink-0 uppercase text-[10px] tracking-wider">
                       {listing.status === "active" ? "Active" : "Inactive"}
                     </Badge>
                   </div>
 
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className={`h-1.5 w-1.5 rounded-full ${listing.status === "active" ? "bg-green-500" : "bg-gray-400"}`} />
-                    <span className="font-mono">{listing.provider?.wallet_address ? `${listing.provider.wallet_address.slice(0,6)}...${listing.provider.wallet_address.slice(-4)}` : "Unknown"}</span>
-                    <span className="text-foreground/20">·</span>
+                    <span className={"h-1.5 w-1.5 rounded-full " + (listing.status === "active" ? "bg-green-500" : "bg-gray-400")} />
+                    <span className="font-mono">{listing.provider?.wallet_address ? listing.provider.wallet_address.slice(0,6) + "..." + listing.provider.wallet_address.slice(-4) : "Unknown"}</span>
+                    <span className="text-foreground/20">-</span>
                     <span className="flex items-center gap-1">
                       <Cpu className="h-3 w-3" />
                       {listing.model_name}
@@ -274,7 +226,7 @@ export default function MarketplacePage() {
 
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     <span>{Number(listing.remaining_calls)} / {Number(listing.max_calls)} calls</span>
-                    <span className="text-foreground/20">·</span>
+                    <span className="text-foreground/20">-</span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       Exp {new Date(listing.expires_at).toLocaleDateString()}
@@ -297,47 +249,23 @@ export default function MarketplacePage() {
                     <span className="text-xs text-muted-foreground">/req</span>
                   </div>
 
-                  {isConnected && (
-                    <div className="w-full md:w-auto">
-                      {grantedListingIds.has(listing.id) ? (
-                        <Button size="sm" variant="outline" disabled className="w-full md:w-28 h-8 text-xs">
-                          <Check className="h-3 w-3 mr-1" /> Granted
-                        </Button>
-                      ) : (
-                        <div className="w-full [&>button]:w-full md:[&>button]:w-28 [&>button]:h-8 [&>button]:text-xs">
-                          <GrantPermissionButton
-                            listingId={listing.id}
-                            sessionAccountAddress={SERVER_ACCOUNT}
-                            onSuccess={(result) => handlePermissionGranted(listing.id, listing.delegation_id ?? undefined, result)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   <div className="flex gap-2 w-full md:w-auto">
                     <Button variant="outline" size="sm" className="flex-1 md:flex-none h-8 text-xs" asChild>
-                      <Link href={`/marketplace/${listing.id}`}>View</Link>
+                      <Link href={"/marketplace/" + listing.id}>Details</Link>
                     </Button>
-                    <Button variant="secondary" size="sm" className="flex-1 md:flex-none h-8 text-xs" asChild>
-                      <Link href={`/marketplace/${listing.id}`}>API</Link>
-                    </Button>
+                    {listing.delegation_id && (
+                      <Button variant="secondary" size="sm" className="flex-1 md:flex-none h-8 text-xs gap-1" asChild>
+                        <Link href={"/playground/" + listing.id}>
+                          <Beaker className="h-3 w-3" /> Try
+                        </Link>
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
             )
           )}
         </div>
-      )}
-
-      {modalData && (
-        <ConsumerTokenModal
-          open={modalData.open}
-          onOpenChange={(open) => setModalData(prev => prev ? { ...prev, open } : null)}
-          jwt={modalData.jwt}
-          endpoint={modalData.endpoint}
-          expiresAt={modalData.expiresAt}
-        />
       )}
     </div>
   );

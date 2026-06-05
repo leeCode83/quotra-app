@@ -3,6 +3,8 @@
 > 
 > **Changelog v2.0:** Fixed payment atomicity contradiction, added escrow treasury model, added request hard limits to prevent per-call pricing exploit, replaced per-call on-chain split with provider manual claim, clarified ERC-7710 vs Supabase responsibility boundary, clarified ERC-7715 role as session auth only, added consumer_permissions to gateway validation, added replay attack protection, fixed race condition with pre-call reservation model, added revoke delegation flow, clarified Vercel runtime separation, updated wording (ETH-free not gasless, OpenAI-inspired not OpenAI-compatible).
 > 
+> **Changelog v2.1:** **JWT REMOVED** — Consumer auth simplified to pure x402 + ERC-7715. No more JWT generation, verification, or middleware. `withAuth`, custom `withX402`, and `chain.ts` deleted. `@x402/next` SDK handles payment intercept + verification natively. Consumer flow: connect wallet → 1x ERC-7710 grant → `x402Fetch()` handles everything. All custom middleware replaced by `paymentProxy` from `@x402/next`. No manual header extraction, no HS256 signing, no consumer_permissions lookup in gateway path. `src/proxy.ts` rewritten with `@x402/next`. `chat/route.ts` rewritten with native `withX402` from `@x402/next`. ~800 lines of custom auth/middleware deleted.
+
 > **Implementation Status (May 2026):**
 > - ✅ 9.7 Claim minimum threshold — added `BELOW_MINIMUM_CLAIM` check at $0.001 to `app/api/escrow/claim/route.ts`
 > - ✅ 9.8 Revoke cascade — both `/api/escrow/revoke` and `/api/listings/[id]` DELETE now cascade to `consumer_permissions.status='revoked'`
@@ -200,34 +202,39 @@ OpenRouter is a centralized reseller — they buy API access wholesale and resel
 
 ---
 
-## 8. Auth Layer Architecture ✅
+## 8. Auth Layer Architecture ✅ (Simplified v2.1)
 
-Quotra has 4 auth layers. Each layer has a distinct, non-overlapping responsibility. Understanding this is critical for implementation.
+Quotra has 3 auth layers. Each layer has a distinct, non-overlapping responsibility.
 
 | Layer | Technology | Responsibility | When Used |
 |-------|-----------|---------------|-----------|
-| **Identity** | Wallet address | Who you are | Login, all authenticated actions |
+| **Identity** | Wallet address | Who you are | Connect, all authenticated actions |
 | **Session Auth** | ERC-7715 | Consumer granted access to a specific listing | Once per listing per consumer |
-| **Request Auth** | JWT (HS256) | Cache of ERC-7715 approval — avoid wallet sign per call | Every API gateway request |
-| **Payment** | x402 USDC | Pay for the API call | Every API gateway request |
+| **Payment** | x402 USDC | Pay + authenticate the API call | Every API gateway request |
 
-### Why JWT is NOT removed
-Without JWT, every API call would require a wallet signature — adding ~500ms+ and a MetaMask popup per request. JWT is a stateless cache of the ERC-7715 session approval, valid for 24 hours.
+### JWT Removed (v2.1)
+Previously, JWT acted as a cache of ERC-7715 approval to avoid wallet signing per call. This added ~800 lines of custom middleware (HS256 signing, Bearer extraction, replay checks, permission lookups). **All removed in v2.1.**
+
+The `@x402/next` SDK handles payment intercept, verification, and proof validation natively. Consumer auth is now:
+- Connect wallet once (MetaMask)
+- Grant ERC-7715 session permission once per listing
+- Every API call uses `x402Fetch()` which auto-handles the 402 → pay → retry flow
+
+No Bearer token, no JWT, no manual header extraction.
 
 ### Auth Layer Flow
 ```
 ONETIME (per listing):
-  Consumer → ERC-7715 wallet approval → Server issues JWT
+  Consumer → Connect wallet → ERC-7715 grant → Permission stored in Supabase
 
 PER-CALL:
-  Consumer → JWT (identity + session proof) → x402 (payment proof) → Venice AI call
+  Consumer → x402Fetch() → 402 intercept → wallet pays USDC → retry with proof → Venice AI call
 ```
 
 ### What Each Layer Does NOT Do
 - ERC-7715 does NOT handle payment — that is x402
 - ERC-7715 does NOT enforce quota — that is Supabase
-- JWT does NOT replace ERC-7715 — it caches it
-- x402 does NOT authenticate identity — that is JWT + wallet
+- x402 does NOT authenticate identity — wallet address from payment proof does
 
 ---
 
@@ -292,7 +299,7 @@ Blockchain is the trust anchor (provider signed delegation = provider consented)
 - Sort by: price low→high (default), remaining calls high→low
 - Marketplace readable without wallet connection
 
-### 9.5 Consumer Permission Flow (ERC-7715 Session Auth)
+### 9.5 Consumer Permission Flow (ERC-7715 Session Auth) ✅ (Simplified v2.1)
 1. Consumer selects a listing on marketplace
 2. Consumer clicks "Use This Provider"
 3. Consumer must connect MetaMask Smart Account if not already connected
@@ -312,21 +319,13 @@ Blockchain is the trust anchor (provider signed delegation = provider consented)
 5. Consumer approves in MetaMask — this is the session authorization grant
 6. Frontend sends ERC-7715 proof + wallet address + delegationId to `/api/consumer/permission`
 7. Server verifies ERC-7715 proof is valid for this consumer + listing
-8. Server auto-creates consumer record if not exists, then upserts row into `consumer_permissions` table (UPDATE if exists, INSERT if not, status: active, expires_at: 24h) ✅
-9. Server generates signed JWT:
-   ```json
-   {
-     "consumerWallet": "0x...",
-     "delegationId": "string",
-     "permissionId": "uuid",
-     "iat": 1234567890,
-     "exp": 1234567890 + 86400
-   }
-   ```
-10. Consumer receives: endpoint URL + JWT consumer token
-11. Consumer stores JWT client-side (localStorage or in-memory)
+8. Server upserts row into `consumer_permissions` table (status: active, expires_at: 24h) ✅
+9. Consumer receives: endpoint URL for this listing
+10. Consumer calls endpoint using `x402Fetch()` — no JWT/Bearer token needed
 
-> **✅ Implementation status:** `GrantPermissionButton.tsx` uses `requestExecutionPermissions` (smart-accounts-kit's wrapper for `wallet_grantPermissions`) with `native-token-allowance` type and `allowanceAmount: 0n`. Delegatee set to `NEXT_PUBLIC_PAY_TO_ADDRESS` (Quotra server account). Expiry: 24h (86400s). The `/api/permissions` POST endpoint stores the proof but does not yet return a JWT — JWT generation will be added in Phase 3.
+> **JWT removed in v2.1.** Consumer auth is now purely x402 + ERC-7715. `@x402/next` SDK handles payment intercept + verification natively. Consumers use `x402Fetch()` which auto-handles the 402 → pay → retry flow.
+
+> **✅ Implementation status:** `GrantPermissionButton.tsx` uses `requestExecutionPermissions` with `native-token-allowance` / `allowanceAmount: 0n`. Permission stored in `consumer_permissions`. No JWT needed.
 
 ### 9.6 API Gateway Flow (Core — Revised for Atomicity)
 
@@ -337,70 +336,30 @@ Blockchain is the trust anchor (provider signed delegation = provider consented)
 **Step-by-step:**
 
 ```
-Step 1: JWT Validation
-  - Extract Authorization: Bearer <token>
-  - Verify JWT signature (HS256, JWT_SECRET)
-  - Check JWT not expired
-  - Extract: consumerWallet, delegationId, permissionId
-  → Fail: 401 INVALID_TOKEN / TOKEN_EXPIRED
+Step 1: x402 Payment Intercept (handled by @x402/next withX402 wrapper)
+  - Consumer calls endpoint via x402Fetch()
+  - withX402 intercepts: no X-PAYMENT header → returns 402 + payment requirements
+  - Consumer wallet pays USDC to QUOTRA_TREASURY via 1Shot Relayer
+  - x402Fetch() auto-retries with payment proof
+  - withX402 verifies proof via Coinbase x402 Facilitator (HTTP)
+  - withX402 prevents replay (unique tx_hash insert)
+  - withX402 inserts transaction row (status = 'pending')
+  → Fail: 402 PAYMENT_PROOF_INVALID / PAYMENT_ALREADY_USED
 
-Step 2: Permission Check (consumer_permissions table)
-  - Query: SELECT id FROM consumer_permissions
-           WHERE id = permissionId
-           AND consumer wallet matches
-           AND listing delegation matches
-           AND status = 'active'
-           AND expires_at > now()
-  → Fail: 401 PERMISSION_EXPIRED / PERMISSION_REVOKED
-
-Step 3: Listing Validation (listings table)
+Step 2: Listing Validation (listings table)
   - Query listing by delegationId
   - Check: status = 'active'
   - Check: expires_at > now()
   - Check: remaining_calls > 0
   → Fail: 404 LISTING_NOT_FOUND / 410 LISTING_EXPIRED / 410 NO_CALLS_REMAINING
 
-Step 4: Request Validation (hard limits)
+Step 3: Request Validation (hard limits)
   - Count total chars in all message content combined
   - Check: total_input_chars <= listing.max_input_chars
   - Check: requested max_tokens <= listing.max_completion_tokens
   → Fail: 400 REQUEST_TOO_LARGE
 
-Step 5: x402 Payment Intercept
-  - If request does NOT have X-PAYMENT header:
-    → Return 402 Payment Required:
-      {
-        "x402Version": 1,
-        "accepts": [{
-          "scheme": "exact",
-          "network": "base-sepolia",
-          "maxAmountRequired": "<price_in_usdc_smallest_unit>",
-          "resource": "/api/v1/[delegationId]/chat",
-          "description": "Quotra API call - [model_name]",
-          "mimeType": "application/json",
-          "payTo": "QUOTRA_TREASURY_ADDRESS",
-          "maxTimeoutSeconds": 60,
-          "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-          "extra": { "name": "USD Coin", "version": "2" }
-        }]
-      }
-  - Consumer wallet pays USDC to QUOTRA_TREASURY_ADDRESS via 1Shot Relayer
-  - Consumer retries request with X-PAYMENT header
-
-Step 6: Payment Proof Verification
-  - Call Coinbase x402 Facilitator: POST https://api.cdp.coinbase.com/platform/v2/x402/verify
-    Body: { payload: X-PAYMENT value, requirements: paymentRequirements }
-  - Facilitator returns: { isValid: boolean, invalidReason?: string }
-  → Fail: 402 PAYMENT_PROOF_INVALID
-
-Step 7: Replay Attack Prevention
-  - Extract tx_hash from verified payment proof
-  - Attempt INSERT into transactions table with tx_hash
-  - transactions.payment_tx_hash has UNIQUE CONSTRAINT
-  - If INSERT fails (duplicate key) → 402 PAYMENT_ALREADY_USED
-  - If INSERT succeeds → transaction row created with status = 'pending'
-
-Step 8: Quota Reservation (pre-call decrement)
+Step 4: Quota Reservation (pre-call decrement)
   - Atomic SQL:
     UPDATE listings
     SET remaining_calls = remaining_calls - 1
@@ -409,7 +368,7 @@ Step 8: Quota Reservation (pre-call decrement)
   - If RETURNING is empty → 410 NO_CALLS_REMAINING
     (rollback: update transaction status to 'refund_pending')
 
-Step 9: AI Provider Call
+Step 5: AI Provider Call
   - Fetch ciphertext + IV + auth_tag from Supabase
   - Decrypt API key in-memory (AES-256-GCM)
   - Build provider request (format based on chosen model)
@@ -417,13 +376,13 @@ Step 9: AI Provider Call
   - Minimize decrypted key lifetime in application scope — do not persist
   - Timeout: 30 seconds
 
-Step 10a: AI Provider SUCCESS
+Step 6a: AI Provider SUCCESS
   - Update transaction: status = 'completed', provider_pending_usdc = price * 0.90
   - Accumulate earnings: UPDATE listings SET total_calls_made = total_calls_made + 1
   - Accumulate provider earnings: UPDATE providers SET pending_earnings_usdc = pending_earnings_usdc + (price * 0.90)
   - Return AI response to consumer (200 OK)
 
-Step 10b: AI Provider FAILURE
+Step 6b: AI Provider FAILURE
   - Update transaction: status = 'refund_pending'
   - Rollback quota reservation: remaining_calls += 1
   - Do NOT credit provider earnings
@@ -575,14 +534,13 @@ Provider (browser)
 ### Data Flow: Consumer API Call
 ```
 Consumer (app/code)
-  → POST /api/v1/[delegationId]/chat (no X-PAYMENT)
-  → gateway: validate JWT → check consumer_permissions → check listing
-  → gateway: return 402 + payment requirements
+  → x402Fetch(POST /api/v1/[delegationId]/chat)  // @x402/next wraps fetch
+  → gateway (withX402): intercepts → returns 402 + payment requirements
   → consumer wallet: pay USDC to QUOTRA_TREASURY via 1Shot
-  → consumer: retry POST with X-PAYMENT header
-  → gateway: verify payment via Coinbase x402 Facilitator (HTTP)
-  → gateway: prevent replay (unique tx_hash insert)
-  → gateway: decrement remaining_calls (quota reservation)
+  → x402Fetch(): auto-retries with X-PAYMENT header
+  → gateway (withX402): verifies payment via Coinbase x402 Facilitator
+  → gateway (withX402): prevents replay (unique tx_hash insert)
+  → gateway: check listing → validate request limits → reserve quota
   → gateway: decrypt Venice AI key → forward request → get response
   → gateway: update transaction (completed) + provider pending earnings
   → consumer: receives LLM response (200 OK)
@@ -832,11 +790,12 @@ Request:
 
 Response 200:
 {
-  "consumerToken": "eyJ...",       // JWT HS256, expires 24h
   "endpoint": "https://quotra.app/api/v1/{delegationId}/chat",
   "permissionId": "uuid",
   "expiresAt": "2026-06-16T00:00:00Z"
 }
+
+// JWT removed in v2.1. Consumers use x402Fetch() — no Bearer token needed.
 
 Errors:
   400: { "error": "INVALID_PROOF" }
@@ -844,11 +803,14 @@ Errors:
   410: { "error": "LISTING_EXPIRED" | "LISTING_REVOKED" | "NO_CALLS_REMAINING" }
 ```
 
-### 14.4 LLM API Gateway (Core Endpoint)
+### 14.4 LLM API Gateway (Core Endpoint) ✅ (Simplified v2.1)
 ```
 POST /api/v1/[delegationId]/chat
-Authorization: Bearer <consumer_token>
 Content-Type: application/json
+
+// No Authorization header. JWT removed in v2.1.
+// Payment is handled by @x402/next withX402 wrapper (402 intercept → pay → retry).
+// Consumer uses x402Fetch() which auto-handles the full flow.
 
 Request Body:
 {
@@ -867,9 +829,8 @@ Validation:
   - messages array: 1–50 items
   - Each message content: non-empty string
 
-First response (no payment):
+First response (no payment — @x402/next intercepts automatically):
   HTTP 402 Payment Required
-  Header: PAYMENT-REQUIRED: <json_payment_requirements>
   {
     "x402Version": 1,
     "accepts": [{
@@ -886,7 +847,7 @@ First response (no payment):
     }]
   }
 
-Second response (with X-PAYMENT / PAYMENT-SIGNATURE header):
+Second response (with X-PAYMENT — @x402/next verifies and retries):
   200 OK:
   {
     "id": "chatcmpl-...",
@@ -910,7 +871,6 @@ Second response (with X-PAYMENT / PAYMENT-SIGNATURE header):
 Error responses:
   400: { "error": "REQUEST_TOO_LARGE", "detail": "Input exceeds max_input_chars: 2000" }
   400: { "error": "INVALID_REQUEST", "detail": "..." }
-  401: { "error": "INVALID_TOKEN" | "TOKEN_EXPIRED" | "PERMISSION_EXPIRED" | "PERMISSION_REVOKED" }
   402: { "error": "PAYMENT_PROOF_INVALID" | "PAYMENT_ALREADY_USED" }
   404: { "error": "LISTING_NOT_FOUND" }
   410: { "error": "LISTING_EXPIRED" | "LISTING_REVOKED" | "NO_CALLS_REMAINING" }
@@ -1207,22 +1167,33 @@ Decrypt flow (server-side only, in Node.js API Route):
   8. Key is never: logged, returned in response, stored in DB, or sent to client
 ```
 
-### Consumer Token (JWT) ✅
+### Consumer Token (JWT) — REMOVED in v2.1
 ```
-Algorithm: HS256
-Secret:    JWT_SECRET (Vercel environment variable, min 32 chars)
-Payload:
-  {
-    consumerWallet: "0x...",    // validated against request on every call
-    delegationId: "string",     // validated against URL param
-    permissionId: "uuid",       // checked against consumer_permissions table
-    iat: unix_timestamp,
-    exp: unix_timestamp + 86400 // 24h
-  }
-Validation order: signature → expiry → permissionId active in DB → wallet match
-```
+JWT has been fully removed from the codebase.
 
-> **✅ Implementation status:** `JWT_EXPIRY` constant in `src/lib/jwt.ts` set to `"24h"`. HS256 signing with `JWT_SECRET` env var. All gateway routes validate JWT before processing. The `/api/permissions` endpoint stores the permission proof in `consumer_permissions` but does not yet issue a JWT — that will be added in Phase 3.
+Previously:
+  Algorithm: HS256
+  Secret:    JWT_SECRET
+  Payload:   { consumerWallet, delegationId, permissionId, iat, exp }
+  Used for:  Request auth (cache of ERC-7715 approval)
+
+Now:
+  Consumer auth is purely x402 + ERC-7715.
+  @x402/next SDK handles payment intercept, verification, and proof validation.
+  No Bearer token, no JWT, no HS256 signing, no manual header extraction.
+
+Files deleted:
+  - src/middleware/auth.ts       (withAuth wrapper — 159 lines)
+  - src/middleware/x402.ts       (custom withX402 — 241 lines)
+  - src/middleware/chain.ts      (middleware chain — 157 lines)
+  - src/middleware/index.ts      (re-export — 39 lines)
+  - src/proxy.ts                 (re-export only — rewritten with @x402/next)
+  - src/middleware/__tests__/*   (x402.test.ts, middleware.test.ts — 938 lines)
+
+Functions removed:
+  - verifyGatewayJWT()          (from src/lib/gateway/helpers.ts)
+  - checkConsumerPermission()   (from src/lib/gateway/helpers.ts)
+```
 
 ### Replay Attack Prevention ✅
 ```
@@ -1309,15 +1280,14 @@ Rina (Venice AI Pro+, $68/month, 7,500 credits):
 | Listing revoked | `status = 'revoked'` | 410 `LISTING_REVOKED` |
 | No calls remaining | `remaining_calls <= 0` | 410 `NO_CALLS_REMAINING` |
 
-### Auth & Permission Errors
+### Auth & Permission Errors (JWT removed in v2.1)
 | Scenario | Detection | Response |
 |---------|-----------|----------|
-| JWT invalid | HS256 verify fail | 401 `INVALID_TOKEN` |
-| JWT expired | `exp < now()` | 401 `TOKEN_EXPIRED` |
-| JWT wallet mismatch | JWT wallet ≠ request wallet | 401 `WALLET_MISMATCH` |
+| Permission not found | No active row in consumer_permissions | 401 `PERMISSION_NOT_FOUND` |
 | Consumer permission expired | `consumer_permissions.expires_at < now()` | 401 `PERMISSION_EXPIRED` |
 | Consumer permission revoked | `consumer_permissions.status = 'revoked'` | 401 `PERMISSION_REVOKED` |
-| Permission not found | No active row in consumer_permissions | 401 `PERMISSION_NOT_FOUND` |
+
+> JWT errors (INVALID_TOKEN, TOKEN_EXPIRED, WALLET_MISMATCH) removed in v2.1. Consumer auth is purely x402 + ERC-7715. No Bearer token/JWT validation in gateway path.
 
 ### Request Validation Errors
 | Scenario | Detection | Response |
@@ -1460,7 +1430,7 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 - [ ] ERC-7710 delegation signing in provider registration flow
 - [ ] ERC-7715 session permission in consumer permission flow
 - [ ] Viem used for all contract interaction
-- [ ] x402 payment flow working end-to-end
+- [ ] x402 payment flow working end-to-end with @x402/next SDK
 - [ ] Coinbase x402 Facilitator used for payment verification
 - [ ] 1Shot Relayer integrated (provider + consumer ETH-free)
 - [ ] Venice AI API integrated as model backend
@@ -1471,6 +1441,8 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 - [ ] AES-256-GCM encryption for Venice AI keys
 - [ ] Escrow treasury model working (payments to treasury, provider claim)
 - [ ] Node.js runtime on gateway API routes (not Edge)
+- [ ] JWT removed — consumer auth = x402 + ERC-7715, no Bearer token needed
+- [ ] Custom middleware deleted — @x402/next handles all payment intercept + verification
 
 ### Demo Script (End-to-End)
 1. Connect MetaMask Smart Account as Provider
@@ -1478,10 +1450,10 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 3. Listing appears on marketplace
 4. Connect different MetaMask Smart Account as Consumer
 5. Browse marketplace → select listing
-6. Approve ERC-7715 session permission → receive JWT + endpoint
-7. Make API call (no payment header) → receive 402 + payment requirements
-8. Consumer wallet pays USDC to treasury (via 1Shot)
-9. Retry with payment proof → receive LLM response (200 OK)
+6. Approve ERC-7715 session permission → receive endpoint URL
+7. Call endpoint via `x402Fetch()` → auto 402 intercept → wallet pays USDC → auto retry → receive LLM response
+8. Dashboard: Provider sees pending earnings
+9. Provider clicks "Claim" → USDC arrives in provider wallet
 10. Dashboard: Provider sees pending earnings
 11. Provider clicks "Claim" → USDC arrives in provider wallet
 

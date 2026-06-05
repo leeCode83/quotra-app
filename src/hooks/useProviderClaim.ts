@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase-client";
-import { signJWT } from "@/lib/jwt";
 import type { ClaimHistory } from "@/types";
 
 export type ClaimStatus = "idle" | "calculating" | "claiming" | "success" | "error";
@@ -21,11 +20,10 @@ export interface UseProviderClaimReturn {
 
 async function fetchClaimHistory(walletAddress: string): Promise<ClaimHistory[]> {
   try {
-    const token = await signJWT({ wallet_address: walletAddress });
     const response = await fetch("/api/escrow/claim", {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        "x-wallet-address": walletAddress,
       },
     });
 
@@ -64,14 +62,14 @@ async function fetchTotalEarnings(walletAddress: string): Promise<number> {
   const listingIds = listings.map((l) => l.id);
   const { data: transactions } = await supabase
     .from("transactions")
-    .select("amount")
+    .select("amount_usdc")
     .eq("status", "confirmed")
     .in("listing_id", listingIds);
 
   if (!transactions) return 0;
 
-  const totalWei = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
-  return totalWei / 1e18;
+  const totalUsdc = transactions.reduce((sum, t) => sum + Number(t.amount_usdc), 0);
+  return totalUsdc;
 }
 
 export function useProviderClaim(): UseProviderClaimReturn {
@@ -93,13 +91,11 @@ export function useProviderClaim(): UseProviderClaimReturn {
 
     setClaimStatus("calculating");
     try {
-      const token = await signJWT({ wallet_address: address });
-
-      // Fetch provider info
+      // Fetch provider info via wallet address header
       const providerResponse = await fetch("/api/providers/register", {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${token}`,
+          "x-wallet-address": address,
         },
       });
 
@@ -122,7 +118,7 @@ export function useProviderClaim(): UseProviderClaimReturn {
         return;
       }
 
-      // Fetch transactions for this provider's listings
+      // Fetch listings for this provider
       const listingsResponse = await fetch("/api/listings");
       const listingsData = await listingsResponse.json();
       const providerListings = (listingsData.listings ?? []).filter(
@@ -132,17 +128,13 @@ export function useProviderClaim(): UseProviderClaimReturn {
       const listingIds = providerListings.map((l: { id: string }) => l.id);
 
       if (listingIds.length > 0) {
-        // In a real app, we'd fetch transactions from an API
-        // For now, we use the claim endpoint's GET to get history and calculate
         const history = await fetchClaimHistory(address);
         setClaimHistory(history);
 
-        // Calculate total claimed
         const totalClaimed = history
           .filter((c) => c.status === "claimed")
           .reduce((sum, c) => sum + c.amount_usdc, 0);
 
-        // Real total earnings from confirmed transactions in Supabase
         const claimable = Math.max(0, Number(totalEarnings) * 0.9 - totalClaimed);
         setClaimableAmount(Number(claimable.toFixed(6)));
       } else {
@@ -174,13 +166,11 @@ export function useProviderClaim(): UseProviderClaimReturn {
     setClaimStatus("claiming");
 
     try {
-      const token = await signJWT({ wallet_address: address });
-
       const response = await fetch("/api/escrow/claim", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          "x-wallet-address": address,
         },
       });
 
@@ -191,9 +181,8 @@ export function useProviderClaim(): UseProviderClaimReturn {
 
       const result = await response.json();
 
-      // Add new claim to history
       const newClaim: ClaimHistory = {
-        id: `claim_${Date.now()}`,
+        id: "claim_" + Date.now(),
         provider_id: address,
         amount_usdc: result.claimable_amount ?? claimableAmount,
         tx_hash: result.tx_hash ?? null,

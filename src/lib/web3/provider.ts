@@ -29,26 +29,3 @@ export function useWalletAddress() {
   const { address, isConnected } = useAccount();
   return isConnected ? address : null;
 }
-
-export function useProviderAuth() {
-  const address = useWalletAddress();
-  return {
-    isAuthenticated: !!address,
-    providerAddress: address ?? null,
-  };
-}
-
-export function useConsumerAuth() {
-  const address = useWalletAddress();
-  return {
-    isAuthenticated: !!address,
-    consumerAddress: address ?? null,
-  };
-}
-
-export function useEscrow() {
-  const address = useWalletAddress();
-  return {
-    escrowAddress: address ?? null,
-  };
-}

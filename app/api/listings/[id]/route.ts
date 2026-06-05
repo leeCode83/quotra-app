@@ -1,29 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { verifyJWT } from "@/lib/jwt";
 import { listingSchema } from "@/lib/validators";
-
-function getAuthToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return null;
-  const parts = authHeader.split(" ");
-  if (parts.length === 2 && parts[0].toLowerCase() === "bearer") return parts[1];
-  return null;
-}
-
-async function getWalletAddress(request: NextRequest): Promise<string | null> {
-  const token = getAuthToken(request);
-  if (!token) return null;
-  try {
-    const payload = await verifyJWT(token);
-    const wallet = payload.wallet_address;
-    if (typeof wallet === "string") return wallet.toLowerCase();
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 async function verifyListingOwnership(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -75,10 +53,7 @@ export async function GET(
 
     if (error) {
       if (error.code === "PGRST116") {
-        return NextResponse.json(
-          { error: "Listing not found" },
-          { status: 404 }
-        );
+        return NextResponse.json({ error: "Listing not found" }, { status: 404 });
       }
       return NextResponse.json(
         { error: "Failed to fetch listing", details: error.message },
@@ -89,10 +64,7 @@ export async function GET(
     return NextResponse.json({ success: true, listing });
   } catch (err) {
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: err instanceof Error ? err.message : "Unknown error",
-      },
+      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }
@@ -103,21 +75,14 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const walletAddress = await getWalletAddress(request);
+    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
     if (!walletAddress) {
-      return NextResponse.json(
-        { error: "Unauthorized: valid JWT required" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
     }
 
     const { id } = await context.params;
     const supabase = supabaseAdmin;
-    const ownership = await verifyListingOwnership(
-      supabase,
-      id,
-      walletAddress
-    );
+    const ownership = await verifyListingOwnership(supabase, id, walletAddress);
 
     if (!ownership.owned) {
       const status = ownership.error?.includes("not found") ? 404 : 403;
@@ -135,28 +100,19 @@ export async function PATCH(
     }
 
     const updateData: Record<string, unknown> = {};
-    if (parseResult.data.name !== undefined)
-      updateData.name = parseResult.data.name;
-    if (parseResult.data.model_name !== undefined)
-      updateData.model_name = parseResult.data.model_name;
-    if (parseResult.data.price_per_call_usdc !== undefined)
-      updateData.price_per_call_usdc = parseResult.data.price_per_call_usdc;
+    if (parseResult.data.name !== undefined) updateData.name = parseResult.data.name;
+    if (parseResult.data.model_name !== undefined) updateData.model_name = parseResult.data.model_name;
+    if (parseResult.data.price_per_call_usdc !== undefined) updateData.price_per_call_usdc = parseResult.data.price_per_call_usdc;
     if (parseResult.data.max_calls !== undefined) {
       updateData.max_calls = parseResult.data.max_calls;
       updateData.remaining_calls = parseResult.data.max_calls;
     }
-    if (parseResult.data.max_input_chars !== undefined)
-      updateData.max_input_chars = parseResult.data.max_input_chars;
-    if (parseResult.data.max_completion_tokens !== undefined)
-      updateData.max_completion_tokens = parseResult.data.max_completion_tokens;
-    if (parseResult.data.expires_at !== undefined)
-      updateData.expires_at = parseResult.data.expires_at;
+    if (parseResult.data.max_input_chars !== undefined) updateData.max_input_chars = parseResult.data.max_input_chars;
+    if (parseResult.data.max_completion_tokens !== undefined) updateData.max_completion_tokens = parseResult.data.max_completion_tokens;
+    if (parseResult.data.expires_at !== undefined) updateData.expires_at = parseResult.data.expires_at;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { error: "No fields to update" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
     const { data: listing, error } = await supabase
@@ -176,10 +132,7 @@ export async function PATCH(
     return NextResponse.json({ success: true, listing });
   } catch (err) {
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: err instanceof Error ? err.message : "Unknown error",
-      },
+      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }
@@ -190,21 +143,14 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const walletAddress = await getWalletAddress(request);
+    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
     if (!walletAddress) {
-      return NextResponse.json(
-        { error: "Unauthorized: valid JWT required" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
     }
 
     const { id } = await context.params;
     const supabase = supabaseAdmin;
-    const ownership = await verifyListingOwnership(
-      supabase,
-      id,
-      walletAddress
-    );
+    const ownership = await verifyListingOwnership(supabase, id, walletAddress);
 
     if (!ownership.owned) {
       const status = ownership.error?.includes("not found") ? 404 : 403;
@@ -223,19 +169,10 @@ export async function DELETE(
       );
     }
 
-    await supabase
-      .from("consumer_permissions")
-      .update({ status: "revoked" })
-      .eq("listing_id", id)
-      .eq("status", "active");
-
     return NextResponse.json({ success: true, status: "revoked" });
   } catch (err) {
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: err instanceof Error ? err.message : "Unknown error",
-      },
+      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }

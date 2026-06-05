@@ -1,29 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  AlertCircle, Wallet, Key, Clock, ArrowUpRight, ExternalLink, ShieldAlert
+  AlertCircle, Wallet, Clock, ArrowUpRight, Beaker
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useWallet, useConsumerAuth } from "@/lib/web3/provider";
-import { formatAddress, formatDate } from "@/lib/utils";
+import { useWallet } from "@/lib/web3/provider";
+import { formatAddress } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-client";
 import { TransactionHistory, Transaction as TxProp } from "@/components/TransactionHistory";
-import { RevokeDialog } from "@/components/RevokeDialog";
-import type { ConsumerPermission, Transaction, Listing } from "@/types";
+import type { Transaction, Listing } from "@/types";
 
 export default function ConsumerDashboardPage() {
   const { session, isWrongChain, disconnect } = useWallet();
-  useConsumerAuth();
-  const queryClient = useQueryClient();
-
-  const [revokeOpen, setRevokeOpen] = useState(false);
-  const [revokePermId, setRevokePermId] = useState<string | null>(null);
 
   const [txPage, setTxPage] = useState(1);
   const txPerPage = 10;
@@ -34,22 +28,10 @@ export default function ConsumerDashboardPage() {
       if (!session.address) return null;
       const supabase = createClient();
       const { data, error } = await supabase.from("consumers").select("*").ilike("wallet_address", session.address).single();
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error && error.code !== "PGRST116") throw error;
       return data;
     },
     enabled: !!session.address,
-  });
-
-  const { data: permissions = [], isLoading: permsLoading, error: permsError } = useQuery<ConsumerPermission[]>({
-    queryKey: ["permissions", consumer?.id],
-    queryFn: async () => {
-      if (!consumer?.id) return [];
-      const supabase = createClient();
-      const { data, error } = await supabase.from("consumer_permissions").select("*").eq("consumer_id", consumer.id);
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!consumer?.id,
   });
 
   const { data: txData, isLoading: txLoading, error: txError } = useQuery({
@@ -84,25 +66,13 @@ export default function ConsumerDashboardPage() {
     },
   });
 
-  const handleRevokeConfirm = async () => {
-    if (!revokePermId) return;
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("consumer_permissions")
-      .update({ status: "revoked" })
-      .eq("id", revokePermId);
-      
-    if (error) throw new Error(error.message);
-    queryClient.invalidateQueries({ queryKey: ["permissions"] });
-  };
-
   if (!session.isConnected) {
     return (
       <div className="container mx-auto px-4 py-16 text-center">
         <Wallet className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
         <h1 className="text-2xl font-bold">Connect Your Wallet</h1>
         <p className="text-muted-foreground mt-2 max-w-md mx-auto">
-          Connect your wallet to access the consumer dashboard and manage your API permissions.
+          Connect your wallet to access the consumer dashboard and view your API usage history.
         </p>
       </div>
     );
@@ -123,8 +93,8 @@ export default function ConsumerDashboardPage() {
     );
   }
 
-  const isLoading = consumerLoading || permsLoading || txLoading;
-  const queryError = permsError || txError;
+  const isLoading = consumerLoading || txLoading;
+  const queryError = txError;
 
   if (isLoading) {
     return (
@@ -161,17 +131,18 @@ export default function ConsumerDashboardPage() {
 
   const totalSpent = consumer ? parseFloat(consumer.total_spent_usdc || "0") : 0;
 
-  const activePermissions = permissions.filter(p => p.status === "active");
+  // Build unique listing IDs from transactions for the "used" count
+  const usedListingIds = new Set(transactions.map((tx) => tx.listing_id));
 
-  const formattedTransactions: TxProp[] = transactions.map(tx => ({
+  const formattedTransactions: TxProp[] = transactions.map((tx) => ({
     id: tx.id,
     txHash: tx.payment_tx_hash,
     amountUsdc: tx.amount_usdc,
-    modelName: listings.find(l => l.id === tx.listing_id)?.model_name || "Unknown",
+    modelName: listings.find((l) => l.id === tx.listing_id)?.model_name || "Unknown",
     status: tx.status as "pending" | "completed" | "refund_pending" | "refunded",
     timestamp: tx.created_at,
     completedAt: tx.completed_at,
-    type: "expense"
+    type: "expense" as const,
   }));
 
   return (
@@ -180,7 +151,7 @@ export default function ConsumerDashboardPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Consumer Dashboard</h1>
           <p className="text-muted-foreground mt-1">
-            Manage your API access and track spending
+            Track your AI model usage and spending
           </p>
         </div>
         <Badge variant="outline" className="font-mono text-xs self-start md:self-auto">
@@ -191,11 +162,11 @@ export default function ConsumerDashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Active Permissions</CardDescription>
-            <CardTitle className="text-2xl">{activePermissions.length}</CardTitle>
+            <CardDescription>Models Used</CardDescription>
+            <CardTitle className="text-2xl">{usedListingIds.size}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-xs text-muted-foreground">API keys with access</p>
+            <p className="text-xs text-muted-foreground">Distinct AI models accessed</p>
           </CardContent>
         </Card>
         <Card>
@@ -207,7 +178,7 @@ export default function ConsumerDashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-xs text-muted-foreground">Across all transactions</p>
+            <p className="text-xs text-muted-foreground">Pay-per-call payments via x402</p>
           </CardContent>
         </Card>
         <Card>
@@ -217,26 +188,26 @@ export default function ConsumerDashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              Total transaction records
+              Total payment records
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="permissions" className="space-y-4">
+      <Tabs defaultValue="usage" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="permissions">Permissions</TabsTrigger>
-          <TabsTrigger value="transactions">Purchase History</TabsTrigger>
+          <TabsTrigger value="usage">My Models</TabsTrigger>
+          <TabsTrigger value="transactions">Payment History</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="permissions" className="space-y-4">
-          {permissions.length === 0 ? (
+        <TabsContent value="usage" className="space-y-4">
+          {usedListingIds.size === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold">No Active Permissions</h3>
+                <Beaker className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold">No Models Used Yet</h3>
                 <p className="text-muted-foreground mt-1">
-                  Purchase access to an AI model from the marketplace to get started.
+                  Browse the marketplace and try an AI model to get started.
                 </p>
                 <Button className="mt-4" asChild>
                   <Link href="/marketplace">Browse Marketplace</Link>
@@ -244,52 +215,39 @@ export default function ConsumerDashboardPage() {
               </CardContent>
             </Card>
           ) : (
-            permissions.map((perm) => {
-              const listing = listings.find((l) => l.id === perm.listing_id);
-              const isExpired = perm.expires_at ? new Date(perm.expires_at) < new Date() : false;
-              const isRevoked = perm.status === "revoked";
+            Array.from(usedListingIds).map((listingId) => {
+              const listing = listings.find((l) => l.id === listingId);
+              const modelTxs = transactions.filter((tx) => tx.listing_id === listingId);
               return (
-                <Card key={perm.id}>
+                <Card key={listingId}>
                   <CardContent className="py-4">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold">{listing?.name ?? `Listing #${perm.listing_id}`}</h3>
-                          <Badge variant={isRevoked ? "secondary" : isExpired ? "destructive" : "success"} className="text-xs">
-                            {isRevoked ? "Revoked" : isExpired ? "Expired" : "Active"}
+                          <h3 className="font-semibold">{listing?.name ?? "Unknown Model"}</h3>
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {listing?.model_name ?? "--"}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <Key className="h-3.5 w-3.5" />
-                            {perm.session_key.slice(0, 12)}...
+                            <Clock className="h-3.5 w-3.5" />
+                            {modelTxs.length} call{modelTxs.length !== 1 ? "s" : ""}
                           </span>
-                          {perm.expires_at && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3.5 w-3.5" />
-                              Expires {formatDate(perm.expires_at)}
-                            </span>
-                          )}
+                          <span>
+                            {parseFloat(
+                              modelTxs.reduce((sum, tx) => sum + parseFloat(tx.amount_usdc), 0).toFixed(6)
+                            )}{" "}
+                            USDC total
+                          </span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        {!isRevoked && !isExpired && (
-                          <Button 
-                            variant="destructive" 
-                            size="sm" 
-                            onClick={() => {
-                              setRevokePermId(perm.id);
-                              setRevokeOpen(true);
-                            }}
-                          >
-                            <ShieldAlert className="h-4 w-4 mr-1" /> Revoke
-                          </Button>
-                        )}
-                        {listing?.endpoint_url && (
-                          <Button variant="outline" size="sm" asChild>
-                            <a href={listing.endpoint_url} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="h-4 w-4 mr-1" /> API
-                            </a>
+                        {listing?.delegation_id && (
+                          <Button size="sm" className="gap-1.5" asChild>
+                            <Link href={"/playground/" + listingId}>
+                              <Beaker className="h-4 w-4" /> Try Again
+                            </Link>
                           </Button>
                         )}
                       </div>
@@ -302,13 +260,13 @@ export default function ConsumerDashboardPage() {
         </TabsContent>
 
         <TabsContent value="transactions" className="space-y-4">
-          <TransactionHistory transactions={formattedTransactions} title="Purchase History" />
-          
+          <TransactionHistory transactions={formattedTransactions} title="Payment History" />
+
           {txTotalCount > txPerPage && (
             <div className="flex justify-between items-center mt-4 bg-card p-4 rounded-md border border-border">
-              <Button 
-                variant="outline" 
-                onClick={() => setTxPage(p => Math.max(1, p - 1))} 
+              <Button
+                variant="outline"
+                onClick={() => setTxPage((p) => Math.max(1, p - 1))}
                 disabled={txPage === 1}
               >
                 Previous
@@ -316,9 +274,9 @@ export default function ConsumerDashboardPage() {
               <span className="text-sm text-muted-foreground font-medium">
                 Page {txPage} of {Math.ceil(txTotalCount / txPerPage)}
               </span>
-              <Button 
-                variant="outline" 
-                onClick={() => setTxPage(p => p + 1)} 
+              <Button
+                variant="outline"
+                onClick={() => setTxPage((p) => p + 1)}
                 disabled={txPage >= Math.ceil(txTotalCount / txPerPage)}
               >
                 Next
@@ -327,12 +285,6 @@ export default function ConsumerDashboardPage() {
           )}
         </TabsContent>
       </Tabs>
-
-      <RevokeDialog 
-        open={revokeOpen} 
-        onOpenChange={setRevokeOpen} 
-        onConfirm={handleRevokeConfirm} 
-      />
     </div>
   );
 }

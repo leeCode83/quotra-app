@@ -3,20 +3,15 @@
 import { use, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { ArrowLeft, Check, Copy, Shield, Timer, Terminal, Wallet, Zap } from "lucide-react";
+import { ArrowLeft, Beaker, Check, Copy, Shield, Timer, Terminal, Wallet, Zap } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { GrantPermissionButton } from "@/components/GrantPermissionButton";
-import { ConsumerTokenModal } from "@/components/ConsumerTokenModal";
 import { createClient } from "@/lib/supabase-client";
 import { formatPrice } from "@/lib/utils";
 import type { ListingWithProvider } from "@/types";
 import { useAccount } from "wagmi";
-import type { Address } from "viem";
-
-const SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Address;
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -35,20 +30,6 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const { isConnected } = useAccount();
 
-  const [modalData, setModalData] = useState<{ open: boolean; jwt: string; endpoint: string; expiresAt: string } | null>(null);
-  const [granted, setGranted] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("quotra_permissions");
-      if (stored) {
-        try {
-          const perms = JSON.parse(stored);
-          const active = perms.find((p: { listingId: string; expiresAt: string }) => p.listingId === id && p.expiresAt > new Date().toISOString());
-          if (active) return true;
-        } catch {}
-      }
-    }
-    return false;
-  });
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
 
   const { data: listing, isLoading, error } = useQuery<ListingWithProvider>({
@@ -65,26 +46,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     },
   });
 
-  const handlePermissionGranted = (result: { jwt: string; expiresAt: string; permissionId?: string }) => {
-    const stored = localStorage.getItem("quotra_permissions");
-    const perms = stored ? JSON.parse(stored) : [];
-    perms.push({ listingId: id, jwt: result.jwt, expiresAt: result.expiresAt });
-    localStorage.setItem("quotra_permissions", JSON.stringify(perms));
-
-    setGranted(true);
-
-    const endpoint = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${listing?.delegation_id || result.permissionId || "delegation-id"}/chat`;
-    setModalData({
-      open: true,
-      jwt: result.jwt,
-      endpoint,
-      expiresAt: result.expiresAt
-    });
-  };
-
   const handleCopyEndpoint = () => {
     if (!listing) return;
-    const url = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${listing.delegation_id || "{delegation_id}"}/chat`;
+    const url = (process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app") + "/api/v1/" + (listing.delegation_id || "{delegation_id}") + "/chat";
     navigator.clipboard.writeText(url);
     setCopiedEndpoint(true);
     setTimeout(() => setCopiedEndpoint(false), 2000);
@@ -134,10 +98,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const isActive = listing.status === "active";
   const quotaUsed = listing.max_calls - listing.remaining_calls;
   const quotaPercent = listing.max_calls > 0 ? Math.round((quotaUsed / listing.max_calls) * 100) : 0;
-  const gatewayUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app"}/api/v1/${listing.delegation_id || "{delegation_id}"}/chat`;
+  const gatewayUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app") + "/api/v1/" + (listing.delegation_id || "{delegation_id}") + "/chat";
   const providerName = listing.provider?.name || (listing.provider?.wallet_address
-    ? `${listing.provider.wallet_address.slice(0, 6)}...${listing.provider.wallet_address.slice(-4)}`
+    ? listing.provider.wallet_address.slice(0, 6) + "..." + listing.provider.wallet_address.slice(-4)
     : "Unknown");
+  const hasDelegation = !!listing.delegation_id;
 
   return (
     <div className="relative min-h-screen">
@@ -166,7 +131,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   <div className="min-w-0">
                     <div className="flex items-center gap-3 flex-wrap">
                       <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{listing.name}</h1>
-                      <Badge variant={isActive ? "success" : "secondary"} className="gap-1.5">
+                      <Badge variant={isActive ? "default" : "secondary"} className="gap-1.5">
                         {isActive && (
                           <span className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
@@ -236,7 +201,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">Delegation ID</p>
                         <p className="font-semibold font-mono text-sm truncate" title={listing.delegation_id || undefined}>
-                          {listing.delegation_id ? `${listing.delegation_id.slice(0, 8)}...` : "\u2014"}
+                          {listing.delegation_id ? listing.delegation_id.slice(0, 8) + "..." : "--"}
                         </p>
                       </div>
                       <div className="space-y-1">
@@ -269,7 +234,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         <motion.div
                           className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"
                           initial={{ width: 0 }}
-                          animate={{ width: `${quotaPercent}%` }}
+                          animate={{ width: quotaPercent + "%" }}
                           transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
                         />
                       </div>
@@ -289,20 +254,19 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                       {!isConnected ? (
                         <Button className="w-full h-11 gap-2" disabled>
                           <Wallet className="h-4 w-4" />
-                          Connect Wallet to Purchase
-                        </Button>
-                      ) : granted ? (
-                        <Button variant="outline" className="w-full h-11 gap-2" disabled>
-                          <Check className="h-4 w-4 text-green-500" /> Access Granted
+                          Connect Wallet to Use
                         </Button>
                       ) : !isActive ? (
                         <Button className="w-full h-11" disabled>Listing Inactive</Button>
+                      ) : hasDelegation ? (
+                        <Button className="w-full h-11 gap-2" asChild>
+                          <Link href={"/playground/" + listing.id}>
+                            <Beaker className="h-4 w-4" />
+                            Try in Playground
+                          </Link>
+                        </Button>
                       ) : (
-                        <GrantPermissionButton
-                          listingId={listing.id}
-                          sessionAccountAddress={SERVER_ACCOUNT}
-                          onSuccess={handlePermissionGranted}
-                        />
+                        <Button className="w-full h-11" disabled>No delegation configured</Button>
                       )}
                     </div>
 
@@ -311,7 +275,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         <Shield className="h-3 w-3" /> Secure Payment
                       </span>
                       <span className="flex items-center gap-1">
-                        <Zap className="h-3 w-3" /> Instant Access
+                        <Zap className="h-3 w-3" /> Pay Per Call
                       </span>
                     </div>
                   </CardContent>
@@ -322,42 +286,24 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-lg p-4 z-50">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
-          <div>
-            <p className="text-lg font-bold text-primary">
-              ${formatPrice(parseFloat(listing.price_per_call_usdc))}
-            </p>
-            <p className="text-xs text-muted-foreground">per request</p>
-          </div>
-          <div className="min-w-0 max-w-[180px]">
-            {!isConnected ? (
-              <Button className="w-full h-10 text-sm" disabled>Connect</Button>
-            ) : granted ? (
-              <Button variant="outline" className="w-full h-10 text-sm gap-1.5" disabled>
-                <Check className="h-4 w-4" /> Granted
+      {hasDelegation && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-lg p-4 z-50">
+          <div className="flex items-center justify-between max-w-4xl mx-auto">
+            <div>
+              <p className="text-lg font-bold text-primary">
+                ${formatPrice(parseFloat(listing.price_per_call_usdc))}
+              </p>
+              <p className="text-xs text-muted-foreground">per request</p>
+            </div>
+            <div className="min-w-0 max-w-[180px]">
+              <Button className="w-full h-10 text-sm gap-1.5" asChild>
+                <Link href={"/playground/" + listing.id}>
+                  <Beaker className="h-4 w-4" /> Try Now
+                </Link>
               </Button>
-            ) : !isActive ? (
-              <Button className="w-full h-10 text-sm" disabled>Inactive</Button>
-            ) : (
-              <GrantPermissionButton
-                listingId={listing.id}
-                sessionAccountAddress={SERVER_ACCOUNT}
-                onSuccess={handlePermissionGranted}
-              />
-            )}
+            </div>
           </div>
         </div>
-      </div>
-
-      {modalData && (
-        <ConsumerTokenModal
-          open={modalData.open}
-          onOpenChange={(open) => setModalData(prev => prev ? { ...prev, open } : null)}
-          jwt={modalData.jwt}
-          endpoint={modalData.endpoint}
-          expiresAt={modalData.expiresAt}
-        />
       )}
     </div>
   );

@@ -39,31 +39,13 @@ export interface Listing {
   created_at: string;
 }
 
-export interface Consumer {
-  id: string;
-  wallet_address: string;
-  total_spent_usdc: string;
-  created_at: string;
-}
-
-export interface ConsumerPermission {
-  id: string;
-  consumer_id: string;
-  listing_id: string;
-  session_key: string;
-  status: string;
-  permissions_json: Record<string, unknown>;
-  expires_at: string | null;
-  created_at: string;
-}
-
 export type TransactionStatus = "pending" | "completed" | "confirmed" | "failed" | "refunded";
 
 export interface Transaction {
   id: string;
   listing_id: string;
-  consumer_id: string;
-  payment_tx_hash: string;
+  consumer_id?: string;
+  payment_tx_hash?: string;
   amount_usdc: string;
   provider_amount_usdc: string;
   platform_amount_usdc: string;
@@ -93,14 +75,6 @@ export interface ListingWithProvider extends Listing {
 
 export interface TransactionWithListing extends Transaction {
   listing: Listing | null;
-}
-
-export interface JwtPayload {
-  wallet_address: string;
-  consumer_id: string;
-  listing_id: string;
-  iat: number;
-  exp: number;
 }
 
 export interface X402Payment {

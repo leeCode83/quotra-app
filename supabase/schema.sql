@@ -112,8 +112,8 @@ COMMENT ON COLUMN consumer_permissions.status IS 'active | revoked | expired';
 CREATE TABLE transactions (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   listing_id            UUID NOT NULL REFERENCES listings(id),
-  consumer_id           UUID NOT NULL REFERENCES consumers(id),
-  payment_tx_hash       TEXT NOT NULL UNIQUE,
+  consumer_id           UUID REFERENCES consumers(id),
+  payment_tx_hash       TEXT UNIQUE,
   amount_usdc           NUMERIC(18, 8) NOT NULL,
   provider_amount_usdc  NUMERIC(18, 8) NOT NULL,
   platform_amount_usdc  NUMERIC(18, 8) NOT NULL,

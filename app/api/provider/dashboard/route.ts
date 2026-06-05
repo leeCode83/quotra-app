@@ -1,31 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { verifyJWT } from "@/lib/jwt";
 
 export const runtime = "nodejs";
 
-function getAuthToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return null;
-  const parts = authHeader.split(" ");
-  if (parts.length === 2 && parts[0].toLowerCase() === "bearer") return parts[1];
-  return null;
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const token = getAuthToken(request);
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized: valid JWT required" }, { status: 401 });
-    }
-
-    let walletAddress: string;
-    try {
-      const payload = await verifyJWT(token);
-      walletAddress = payload.wallet_address as string;
-      if (!walletAddress) throw new Error("Missing wallet_address");
-    } catch {
-      return NextResponse.json({ error: "Unauthorized: valid JWT required" }, { status: 401 });
+    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
+    if (!walletAddress) {
+      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
     }
 
     const supabase = supabaseAdmin;
@@ -33,7 +15,7 @@ export async function GET(request: NextRequest) {
     // Fetch Provider
     const { data: provider, error: providerError } = await supabase
       .from("providers")
-      .select("id, name, pending_earnings_usdc, total_earned_usdc")
+      .select("id, pending_earnings_usdc, total_earned_usdc")
       .ilike("wallet_address", walletAddress)
       .single();
 
@@ -63,11 +45,10 @@ export async function GET(request: NextRequest) {
 
     if (listingsError) throw listingsError;
 
-    // Fetch transactions (for transaction history table)
-    // We get transactions for this provider's listings
+    // Fetch transactions
     const listingIds = listings ? listings.map(l => l.id) : [];
     let transactions: Record<string, unknown>[] = [];
-    
+
     if (listingIds.length > 0) {
       const { data: txData, error: txError } = await supabase
         .from("transactions")
@@ -79,16 +60,14 @@ export async function GET(request: NextRequest) {
           status,
           created_at,
           completed_at,
-          listings!inner (
-            model_name
-          )
+          listings!inner (model_name)
         `)
         .in("listing_id", listingIds)
         .order("created_at", { ascending: false })
-        .limit(50); // Get latest 50 for the dashboard
+        .limit(50);
 
       if (txError) throw txError;
-      
+
       transactions = (txData || []).map(tx => ({
         id: tx.id,
         txHash: tx.payment_tx_hash,
@@ -96,14 +75,14 @@ export async function GET(request: NextRequest) {
         modelName: (tx.listings as { model_name?: string })?.model_name,
         status: tx.status,
         timestamp: tx.created_at,
-        completedAt: tx.completed_at
+        completedAt: tx.completed_at,
       }));
     }
 
-    // Fetch claim history (for withdrawals tab)
+    // Fetch claim history
     const { data: claimData, error: claimError } = await supabase
       .from("claim_history")
-      .select("id, tx_hash, amount_usdc, status, created_at, completed_at")
+      .select("id, tx_hash, amount_usdc, status, created_at")
       .eq("provider_id", provider.id)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -116,17 +95,15 @@ export async function GET(request: NextRequest) {
       amountUsdc: claim.amount_usdc,
       status: claim.status,
       timestamp: claim.created_at,
-      completedAt: claim.completed_at
     }));
 
     return NextResponse.json({
       success: true,
       provider: {
         id: provider.id,
-        name: provider.name,
         walletAddress: walletAddress,
         pendingEarningsUsdc: provider.pending_earnings_usdc,
-        totalEarnedUsdc: provider.total_earned_usdc
+        totalEarnedUsdc: provider.total_earned_usdc,
       },
       listings: (listings || []).map(l => ({
         id: l.id,
@@ -137,10 +114,10 @@ export async function GET(request: NextRequest) {
         maxCalls: l.max_calls,
         expiresAt: l.expires_at,
         status: l.status,
-        delegationId: l.delegation_id
+        delegationId: l.delegation_id,
       })),
       transactions,
-      claims
+      claims,
     });
   } catch (err) {
     return NextResponse.json(

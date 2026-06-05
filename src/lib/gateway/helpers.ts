@@ -1,5 +1,11 @@
-import { NextRequest } from "next/server";
-import { verifyJWT, ConsumerJWTPayload } from "@/lib/jwt";
+/**
+ * Quotra Gateway helpers.
+ *
+ * Business-logic utilities used by the x402-gated chat endpoint.
+ * JWT verification and permission lookup are removed — x402 payment
+ * verification via @x402/next replaces both.
+ */
+
 import { SupabaseClient } from "@supabase/supabase-js";
 import { GatewayRequestInput } from "@/lib/validators";
 
@@ -10,68 +16,12 @@ export class GatewayError extends Error {
   }
 }
 
-export function extractBearerToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return null;
-  const parts = authHeader.split(" ");
-  if (parts.length === 2 && parts[0].toLowerCase() === "bearer") return parts[1];
-  return null;
-}
-
-export async function verifyGatewayJWT(token: string): Promise<ConsumerJWTPayload> {
-  try {
-    const payload = await verifyJWT(token);
-    if (!payload.consumerWallet || !payload.delegationId || !payload.permissionId) {
-      throw new GatewayError("Invalid JWT: missing required claims", 401, "INVALID_TOKEN");
-    }
-    // Check expiry
-    if (payload.exp && (payload.exp as number) * 1000 < Date.now()) {
-        throw new GatewayError("Token expired", 401, "TOKEN_EXPIRED");
-    }
-    return payload as unknown as ConsumerJWTPayload;
-  } catch (err) {
-    if (err instanceof GatewayError) throw err;
-    throw new GatewayError(`JWT Verification failed: ${err instanceof Error ? err.message : 'Unknown'}`, 401, "INVALID_TOKEN");
-  }
-}
-
-export async function checkConsumerPermission(
-  supabase: SupabaseClient,
-  permissionId: string,
-  consumerWallet: string,
-  delegationId: string
-) {
-  const { data: permission, error } = await supabase
-    .from("consumer_permissions")
-    .select("status, expires_at, listings!inner(delegation_id)")
-    .eq("id", permissionId)
-    .single();
-
-  if (error || !permission) {
-    throw new GatewayError("Permission not found", 401, "PERMISSION_NOT_FOUND");
-  }
-
-  if (permission.status !== "active") {
-    throw new GatewayError("Permission is not active", 401, "PERMISSION_REVOKED");
-  }
-
-  if (new Date(permission.expires_at) < new Date()) {
-    throw new GatewayError("Permission has expired", 401, "PERMISSION_EXPIRED");
-  }
-
-  // Type assertion since postgrest might not strongly type inner joins easily
-  const listingDelegationId = (permission.listings as { delegation_id?: string })?.delegation_id;
-  if (listingDelegationId !== delegationId) {
-    throw new GatewayError("Delegation ID mismatch", 401, "INVALID_DELEGATION");
-  }
-
-  return permission;
-}
-
 export async function getActiveListing(supabase: SupabaseClient, delegationId: string) {
   const { data: listing, error } = await supabase
     .from("listings")
-    .select("id, status, expires_at, remaining_calls, max_input_chars, max_completion_tokens, price_per_call_usdc, encrypted_key, key_iv, key_auth_tag, provider_id, model_name")
+    .select(
+      "id, status, expires_at, remaining_calls, max_input_chars, max_completion_tokens, price_per_call_usdc, encrypted_key, key_iv, key_auth_tag, provider_id, model_name",
+    )
     .eq("delegation_id", delegationId)
     .single();
 
@@ -97,29 +47,27 @@ export async function getActiveListing(supabase: SupabaseClient, delegationId: s
 export function validateRequestLimits(
   body: GatewayRequestInput,
   maxInputChars: number,
-  maxCompletionTokens: number
+  maxCompletionTokens: number,
 ) {
-  // Count total input chars across chat message and optional system prompt
   const totalInputChars = body.chat.length + (body.systemPrompt?.length ?? 0);
   if (totalInputChars > maxInputChars) {
-    throw new GatewayError(`Input exceeds maximum allowed characters (${totalInputChars} > ${maxInputChars})`, 400, "REQUEST_TOO_LARGE");
+    throw new GatewayError(
+      `Input exceeds maximum allowed characters (${totalInputChars} > ${maxInputChars})`,
+      400,
+      "REQUEST_TOO_LARGE",
+    );
   }
 
   if (body.maxOutputTokens && body.maxOutputTokens > maxCompletionTokens) {
-    throw new GatewayError(`Requested maxOutputTokens exceeds allowed limit (${body.maxOutputTokens} > ${maxCompletionTokens})`, 400, "REQUEST_TOO_LARGE");
+    throw new GatewayError(
+      `Requested maxOutputTokens exceeds allowed limit (${body.maxOutputTokens} > ${maxCompletionTokens})`,
+      400,
+      "REQUEST_TOO_LARGE",
+    );
   }
 }
 
 export async function reserveQuotaSlot(supabase: SupabaseClient, listingId: string) {
-  // Using an atomic RPC would be best, but we'll try update with match logic first
-  // Alternatively, just do an update and check rows affected if possible.
-  // We'll use a direct decrement via Supabase postgres if possible, or standard update.
-  // Standard Supabase update doesn't support direct decrement easily without RPC,
-  // but for hackathon/PoC, we'll fetch then update, or we can use RPC.
-  // Assuming no RPC for now, we'll do standard read then update with a condition.
-  
-  // Actually, we can fetch, decrement, and update. For better concurrency, 
-  // RPC `decrement_remaining_calls` is standard. We will just do a standard update for now.
   const { data: listing } = await supabase
     .from("listings")
     .select("remaining_calls")
@@ -146,7 +94,7 @@ export async function rollbackQuotaSlot(supabase: SupabaseClient, listingId: str
     .select("remaining_calls")
     .eq("id", listingId)
     .single();
-    
+
   if (listing) {
     await supabase
       .from("listings")
@@ -157,25 +105,31 @@ export async function rollbackQuotaSlot(supabase: SupabaseClient, listingId: str
 
 export async function recordSuccessTransaction(
   supabase: SupabaseClient,
-  txHash: string,
-  usage: Record<string, unknown>
+  listingId: string,
+  pricePerCallUsdc: number,
+  usage: Record<string, unknown>,
 ) {
-  await supabase
-    .from("transactions")
-    .update({
-      status: "completed",
-      completed_at: new Date().toISOString(),
-      metadata: { usage }
-    })
-    .eq("payment_tx_hash", txHash);
+  const amountUsdc = pricePerCallUsdc.toFixed(6);
+  const providerAmount = (pricePerCallUsdc * 0.9).toFixed(6);
+  const platformAmount = (pricePerCallUsdc * 0.1).toFixed(6);
+
+  await supabase.from("transactions").insert({
+    listing_id: listingId,
+    amount_usdc: amountUsdc,
+    provider_amount_usdc: providerAmount,
+    platform_amount_usdc: platformAmount,
+    status: "completed",
+    completed_at: new Date().toISOString(),
+    prompt_tokens: (usage as { prompt_tokens?: number }).prompt_tokens ?? null,
+    completion_tokens: (usage as { completion_tokens?: number }).completion_tokens ?? null,
+  });
 }
 
 export async function accumulateProviderEarnings(
   supabase: SupabaseClient,
   providerId: string,
-  amountToAddUsdc: string
+  pricePerCallUsdc: number,
 ) {
-  // Simple read-modify-write for hackathon. 
   const { data: provider } = await supabase
     .from("providers")
     .select("pending_earnings_usdc, total_earned_usdc")
@@ -184,12 +138,10 @@ export async function accumulateProviderEarnings(
 
   if (provider) {
     const currentPending = parseFloat(provider.pending_earnings_usdc || "0");
-    const addedAmount = parseFloat(amountToAddUsdc);
-    const newPending = (currentPending + addedAmount).toFixed(6);
+    const platformFee = pricePerCallUsdc * 0.1;
+    const providerAmount = pricePerCallUsdc - platformFee;
+    const newPending = (currentPending + providerAmount).toFixed(6);
 
-    await supabase
-      .from("providers")
-      .update({ pending_earnings_usdc: newPending })
-      .eq("id", providerId);
+    await supabase.from("providers").update({ pending_earnings_usdc: newPending }).eq("id", providerId);
   }
 }

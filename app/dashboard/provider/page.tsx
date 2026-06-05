@@ -4,14 +4,14 @@ import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import NumberFlow from "@number-flow/react";
 import {
-  Plus, Loader2, AlertCircle, Wallet, LogIn,
+  Plus, Loader2, AlertCircle, Wallet,
   FileKey, List, Ban, Clock, Cpu, TrendingUp, Coins,
   ArrowRightLeft, LayoutDashboard
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,26 +30,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWallet } from "@/lib/web3/provider";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import { useAuth } from "@/lib/web3/auth";
+
 import { cn, formatAddress } from "@/lib/utils";
 import { TransactionHistory, Transaction } from "@/components/TransactionHistory";
 import { useProviderClaim } from "@/hooks/useProviderClaim";
 
+const DEFAULT_MODEL_MAP: Record<string, string> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-3-5-haiku-20241022",
+  gemini: "gemini-2.0-flash",
+};
+
 const emptyListingForm = {
   name: "",
-  modelName: "",
+  provider: "",
   pricePerCallUsdc: 0.001,
   maxCalls: 100,
   maxInputChars: 2000,
   maxCompletionTokens: 500,
   expiryDays: 30,
-  veniceApiKey: "",
+  apiKey: "",
 };
 
 export default function ProviderDashboardPage() {
-  const { session, isWrongChain, disconnect } = useWallet();
+  const { session, isWrongChain } = useWallet();
   const { connect, switchChain, isConnecting } = useWalletConnection();
-  const { token, isLoading: authLoading, login } = useAuth();
   const queryClient = useQueryClient();
   
   const [isCreatingListing, setIsCreatingListing] = useState(false);
@@ -61,10 +66,10 @@ export default function ProviderDashboardPage() {
   const { claim } = useProviderClaim();
 
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
-    queryKey: ["provider-dashboard", token],
+    queryKey: ["provider-dashboard", session.address],
     queryFn: async () => {
       const res = await fetch("/api/provider/dashboard", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: { "x-wallet-address": session.address || "" },
       });
       if (!res.ok) {
         if (res.status === 404) return null; // No provider yet
@@ -72,7 +77,7 @@ export default function ProviderDashboardPage() {
       }
       return res.json();
     },
-    enabled: !!token,
+    enabled: !!session.address,
   });
 
   const provider = dashboardData?.provider || null;
@@ -84,8 +89,8 @@ export default function ProviderDashboardPage() {
   const totalEarned = provider ? (typeof provider.totalEarnedUsdc === "string" ? parseFloat(provider.totalEarnedUsdc) : provider.totalEarnedUsdc) : 0;
 
   const handleCombinedRegistration = useCallback(async () => {
-    if (!window.ethereum) {
-      setRegisterError("MetaMask not detected");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!(window as any).ethereum) {
       return;
     }
     
@@ -104,7 +109,7 @@ export default function ProviderDashboardPage() {
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const signature: string = await (window.ethereum.request as any)({
+      const signature: string = await ((window as any).ethereum.request as any)({
         method: "personal_sign",
         params: [delegationMessage, session.address],
       });
@@ -115,8 +120,8 @@ export default function ProviderDashboardPage() {
       // Submit Combined Payload
       const payload = {
         walletAddress: session.address,
-        veniceApiKey: form.veniceApiKey,
-        modelName: form.modelName,
+        apiKey: form.apiKey,
+        modelName: DEFAULT_MODEL_MAP[form.provider],
         pricePerCallUsdc: form.pricePerCallUsdc,
         maxCalls: form.maxCalls,
         maxInputChars: form.maxInputChars,
@@ -131,7 +136,7 @@ export default function ProviderDashboardPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          "x-wallet-address": session.address,
         },
         body: JSON.stringify(payload),
       });
@@ -149,14 +154,14 @@ export default function ProviderDashboardPage() {
     } finally {
       setRegistering(false);
     }
-  }, [form, session.address, token, queryClient]);
+  }, [form, session.address, queryClient]);
 
   const handleRevoke = async (listingId: string) => {
     setRevokingId(listingId);
     try {
       const res = await fetch(`/api/listings/${listingId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
+    headers: { "x-wallet-address": session.address }
       });
       if (!res.ok) {
         const err = await res.json();
@@ -170,8 +175,26 @@ export default function ProviderDashboardPage() {
     }
   };
 
-  const showAuthModal = !session.isConnected || isWrongChain || !token;
+  const showAuthModal = !session.isConnected || isWrongChain;
   const isFirstTime = !dashboardLoading && !provider && !showAuthModal;
+
+  const handleRegisterProvider = useCallback(async () => {
+    setRegistering(true);
+    setRegisterError(null);
+    try {
+      const res = await fetch("/api/provider/register-wallet", {
+        method: "POST",
+        headers: { "x-wallet-address": session.address || "" },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Registration failed");
+      queryClient.invalidateQueries({ queryKey: ["provider-dashboard"] });
+    } catch (err) {
+      setRegisterError(err instanceof Error ? err.message : "Registration failed");
+    } finally {
+      setRegistering(false);
+    }
+  }, [session.address, queryClient]);
 
   const renderFormFields = () => (
     <div className="space-y-4">
@@ -181,16 +204,15 @@ export default function ProviderDashboardPage() {
           <Input id="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="My Llama Instance" />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="modelName">Model Name</Label>
-          <Select value={form.modelName} onValueChange={(v) => setForm({ ...form, modelName: v })}>
-            <SelectTrigger id="modelName">
-              <SelectValue placeholder="Select a model" />
+          <Label htmlFor="provider">Provider</Label>
+          <Select value={form.provider} onValueChange={(v) => setForm({ ...form, provider: v })}>
+            <SelectTrigger id="provider">
+              <SelectValue placeholder="Select a provider" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="llama-3.3-70b">Llama 3.3 70B</SelectItem>
-              <SelectItem value="deepseek-r1-llama-70b">DeepSeek R1 (Llama 70B)</SelectItem>
-              <SelectItem value="deepseek-v4-pro">DeepSeek v4 Pro</SelectItem>
-              <SelectItem value="qwen-3.6">Qwen 3.6</SelectItem>
+              <SelectItem value="openai">OpenAI</SelectItem>
+              <SelectItem value="anthropic">Anthropic</SelectItem>
+              <SelectItem value="gemini">Gemini</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -230,8 +252,8 @@ export default function ProviderDashboardPage() {
           </Select>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="veniceApiKey">Venice AI API Key</Label>
-        <Input id="veniceApiKey" type="password" value={form.veniceApiKey} onChange={(e) => setForm({ ...form, veniceApiKey: e.target.value })} placeholder="sk-..." />
+        <Label htmlFor="apiKey">API KEY</Label>
+        <Input id="apiKey" type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder="sk-..." />
       </div>
       
       <p className="text-sm text-muted-foreground mt-4 border-t pt-4">
@@ -245,7 +267,7 @@ export default function ProviderDashboardPage() {
       <div className="flex justify-end pt-2">
         <Button 
           onClick={handleCombinedRegistration} 
-          disabled={registering || !form.name || !form.modelName || !form.veniceApiKey} 
+          disabled={registering || !form.name || !form.provider || !form.apiKey} 
           size="sm"
         >
           {registering && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
@@ -277,7 +299,7 @@ export default function ProviderDashboardPage() {
                 ) : isWrongChain ? (
                   <><AlertCircle className="h-5 w-5 text-destructive" /> Wrong Network</>
                 ) : (
-                  <><LogIn className="h-5 w-5 text-primary" /> Authenticate</>
+                <><Wallet className="h-5 w-5 text-primary" /> Connect</>
                 )}
               </DialogTitle>
               <DialogDescription>
@@ -333,69 +355,102 @@ export default function ProviderDashboardPage() {
               <div 
                 className={cn(
                   "flex items-center gap-3 p-3 rounded-lg border transition-colors",
-                  token ? "border-success/30 bg-success/5" : (session.isConnected && !isWrongChain ? "border-muted cursor-pointer hover:border-primary/50" : "border-muted opacity-50")
+                session.isConnected && !isWrongChain ? "border-muted" : "border-muted opacity-50"
                 )}
-                onClick={() => !token && session.isConnected && !isWrongChain && login()}
+                onClick={() => {}}
               >
                 <div className={cn(
                   "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                  token ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"
+                "bg-muted text-muted-foreground"
                 )}>3</div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Sign Authentication</p>
                   <p className="text-xs text-muted-foreground">
-                    {token ? "Authenticated" : "Signature required"}
+                {session.isConnected ? "Connected: " + (session.address?.slice(0,6) || "") + "..." : "Wallet Not Connected"}
                   </p>
                 </div>
-                {!token && session.isConnected && !isWrongChain ? (
-                  <Button size="sm" onClick={(e) => { e.stopPropagation(); login(); }} disabled={authLoading} className="shrink-0 pointer-events-none">
-                    {authLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                    Sign In
+                {session.isConnected ? (
+                  <Badge variant="outline" className="text-xs">
+                    {session.address?.slice(0,6) + "..." + session.address?.slice(-4)}
+                  </Badge>
+                ) : (
+                  <Button size="sm" onClick={() => connect()} disabled={isConnecting}>
+                    {isConnecting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                    Connect
                   </Button>
-                ) : token ? (
-                  <FileKey className="h-4 w-4 text-success shrink-0" />
-                ) : null}
+                )}
+            </div>
               </div>
 
-              {isWrongChain && (
-                <Button variant="outline" onClick={() => disconnect()} className="w-full">
-                  Disconnect Wallet
-                </Button>
-              )}
-            </div>
           </DialogContent>
         </Dialog>
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 lg:mb-12 gap-4">
-          <div>
-            <h1 className="text-3xl lg:text-4xl font-bold tracking-tight font-display">Provider Dashboard</h1>
-            <p className="text-muted-foreground mt-1">Manage your AI model listings and earnings</p>
-          </div>
-          {session.isConnected && (
-            <Badge variant="outline" className="font-mono text-xs py-1.5 px-3 bg-card/50 backdrop-blur-sm border-foreground/10 w-fit">
-              <Wallet className="h-3 w-3 mr-1.5 text-primary" />
-              {formatAddress(session.address)}
-            </Badge>
-          )}
-        </div>
+        <Dialog open={isFirstTime}>
+          <DialogContent
+            className="sm:max-w-md [&>button]:hidden border-foreground/10 bg-card/90 backdrop-blur-xl"
+            onInteractOutside={(e) => e.preventDefault()}
+            onEscapeKeyDown={(e) => e.preventDefault()}
+          >
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileKey className="h-5 w-5 text-primary" /> Register as Provider
+              </DialogTitle>
+              <DialogDescription>
+                Create your provider account to start monetizing your AI API quotas on Quotra.
+              </DialogDescription>
+            </DialogHeader>
 
-        {isFirstTime && (
-          <Card className="max-w-2xl mx-auto mt-12 border-dashed border-2 border-primary/30 bg-card/50 backdrop-blur-sm">
-            <CardHeader className="text-center pb-2">
-              <CardTitle className="text-2xl font-display">Become a Quotra Provider</CardTitle>
-              <CardDescription className="text-base">
-                Monetize your unused AI API quotas by listing them on the decentralized marketplace.
-                No credit card needed, get paid in USDC per call.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center py-6">
-              <Button size="lg" onClick={() => setIsCreatingListing(true)} className="w-full sm:w-auto">
-                <Plus className="h-5 w-5 mr-2" />
-                Create Your First Listing
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-success/30 bg-success/5">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-success text-success-foreground">1</div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Connect Wallet</p>
+                  <p className="text-xs text-muted-foreground">{formatAddress(session.address)}</p>
+                </div>
+                <Wallet className="h-4 w-4 text-success shrink-0" />
+              </div>
+
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-success/30 bg-success/5">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-success text-success-foreground">2</div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Base Sepolia Network</p>
+                  <p className="text-xs text-muted-foreground">Connected to Base Sepolia</p>
+                </div>
+                <Cpu className="h-4 w-4 text-success shrink-0" />
+              </div>
+
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-muted cursor-pointer hover:border-primary/50 transition-colors">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-primary text-primary-foreground">3</div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Register Provider</p>
+                  <p className="text-xs text-muted-foreground">
+                    {registering ? "Registering..." : "Click to register your wallet as a provider"}
+                  </p>
+                </div>
+                {!registering && <ArrowRightLeft className="h-4 w-4 text-primary shrink-0" />}
+              </div>
+
+              {registerError && (
+                <p className="text-sm text-destructive font-medium">{registerError}</p>
+              )}
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  onClick={handleRegisterProvider}
+                  disabled={registering}
+                  size="sm"
+                >
+                  {registering && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                  <FileKey className="h-4 w-4 mr-1" /> Register as Provider
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center">
+                One-time registration. After this, you can create listings to sell your API quotas.
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {!showAuthModal && provider && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
