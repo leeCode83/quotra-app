@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createListingSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/encryption";
-import { executeAsDelegator } from "@/lib/oneshot";
+
 
 export const runtime = "nodejs";
 
@@ -61,8 +61,8 @@ export async function POST(request: NextRequest) {
     // 2. Encrypt AI Provider API Key
     const { encrypted_key, key_iv, key_auth_tag } = await encrypt(data.apiKey);
 
-    if (!data.signedDelegation) {
-      return NextResponse.json({ error: "Signed delegation is required" }, { status: 400 });
+    if (!data.permissionsContext || !data.delegationManager) {
+      return NextResponse.json({ error: "Permissions context and delegation manager are required" }, { status: 400 });
     }
 
     // 3. Create Listing
@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
         max_completion_tokens: data.maxCompletionTokens,
         expires_at: expiresAt,
         delegation_id: data.delegationId,
-        signed_delegation: data.signedDelegation,
+        permissions_context: data.permissionsContext,
+        delegation_manager: data.delegationManager,
         encrypted_key: encrypted_key,
         key_iv: key_iv,
         key_auth_tag: key_auth_tag,
@@ -96,11 +97,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create listing", details: lError?.message }, { status: 500 });
     }
 
-    // 4. Submit to 1Shot (non-blocking)
-    const usdcMethodId = process.env.ONE_SHOT_API_USDC_CONTRACT_METHOD_ID;
-    if (usdcMethodId) {
-      executeAsDelegator(usdcMethodId, [JSON.stringify(data.signedDelegation)], { listing_id: listing.id, max_calls: data.maxCalls }).catch(console.warn);
-    }
+
 
     return NextResponse.json({
       success: true,

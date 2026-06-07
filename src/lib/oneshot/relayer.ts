@@ -1,155 +1,91 @@
-const RELAYER_URL =
-  process.env.ONE_SHOT_RELAYER_URL ??
-  "https://relayer.1shotapi.com/relayers";
+import { encodeFunctionData } from "viem";
 
-interface JsonRpcRequest {
-  jsonrpc: "2.0";
-  id: number;
-  method: string;
-  params?: Record<string, unknown>;
-}
+export type Delegation7710 = {
+  delegate: `0x${string}`;
+  delegator: `0x${string}`;
+  authority: string;
+  caveats: Array<{ enforcer: `0x${string}`; terms: string; args: string }>;
+  salt: string;
+  signature: string;
+};
 
-interface JsonRpcResponse<T = unknown> {
-  jsonrpc: "2.0";
-  id: number;
-  result?: T;
-  error?: { code: number; message: string };
-}
+export type Execution7710 = {
+  target: `0x${string}`;
+  value: string;
+  data: `0x${string}`;
+};
 
-let requestId = 1;
+export type DelegatedTransaction7710 = {
+  permissionContext: Delegation7710[];
+  executions: Execution7710[];
+};
 
-async function jsonRpcCall<T = unknown>(
-  method: string,
-  params?: Record<string, unknown>
-): Promise<T> {
-  const body: JsonRpcRequest = {
-    jsonrpc: "2.0",
-    id: requestId++,
-    method,
-    params,
+export function buildRelayerDelegation(
+  delegationJson: Record<string, unknown>,
+  signature: string
+): Delegation7710 {
+  // delegationJson should be the raw object from createDelegation
+  // Need to ensure all BigInts or numbers that should be hex are hex strings
+  // but since we receive it from the client, it is already JSON-ified.
+  
+  // The kit's toRelayerJson() usually handles this. If we get the JSON from the client,
+  // we just need to ensure caveats have "args" field if it's missing.
+  
+  const d = delegationJson as Record<string, unknown>;
+  
+  return {
+    delegate: d.delegate as `0x${string}`,
+    delegator: d.delegator as `0x${string}`,
+    authority: d.authority as string,
+    caveats: ((d.caveats as Record<string, unknown>[]) || []).map((c: Record<string, unknown>) => ({
+      enforcer: c.enforcer as `0x${string}`,
+      terms: c.terms as string,
+      args: (c.args as string) || "0x00",
+    })),
+    salt: d.salt as string,
+    signature,
   };
+}
 
-  const res = await fetch(RELAYER_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+export function buildFeeTransferExecution(
+  feeCollector: `0x${string}`,
+  usdcAddress: `0x${string}`,
+  feeAmount: string | bigint
+): Execution7710 {
+  // Standard ERC-20 transfer ABI: transfer(address to, uint256 amount)
+  const transferAbi = [
+    {
+      inputs: [
+        { name: "to", type: "address" },
+        { name: "amount", type: "uint256" },
+      ],
+      name: "transfer",
+      outputs: [{ name: "", type: "bool" }],
+      stateMutability: "nonpayable",
+      type: "function",
+    },
+  ];
+
+  const data = encodeFunctionData({
+    abi: transferAbi,
+    functionName: "transfer",
+    args: [feeCollector, BigInt(feeAmount)],
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "") ?? "";
-    throw new Error(`Relayer HTTP error (${res.status}): ${text}`);
-  }
-
-  const data: JsonRpcResponse<T> = await res.json();
-
-  if (data.error) {
-    throw new Error(`Relayer error (${data.error.code}): ${data.error.message}`);
-  }
-
-  return data.result as T;
+  return {
+    target: usdcAddress,
+    value: "0x0",
+    data,
+  };
 }
 
-export interface RelayerCapabilities {
-  chains: {
-    chain_id: number;
-    supported_fee_tokens: {
-      address: string;
-      symbol: string;
-      decimals: number;
-    }[];
-    relayer_address: string;
-  }[];
-}
-
-export interface FeeData {
-  chain_id: number;
-  fee_token: string;
-  estimated_fee: string;
-  estimated_gas: string;
-  gas_price: string;
-  conversion_rate?: string;
-}
-
-export interface TxStatus {
-  status: "pending" | "confirmed" | "failed";
-  tx_hash?: string;
-  block_number?: number;
-  error?: string;
-}
-
-export interface Send7710Result {
-  status: string;
-  tx_hash: string;
-  relayer_tx_id: string;
-}
-
-export interface Estimate7710Result {
-  estimated_gas: string;
-  estimated_fee: string;
-  fee_token: string;
-}
-
-export async function getCapabilities(): Promise<RelayerCapabilities> {
-  return jsonRpcCall<RelayerCapabilities>("relayer_getCapabilities");
-}
-
-/**
- * Returns the correct targetAddress (relayer address) from capabilities for a given chainId.
- * This address must be used as the 'to' address for delegation.
- */
-export async function getRelayerTargetAddress(chainId: number): Promise<string> {
-  const caps = await getCapabilities();
-  const chainCaps = caps.chains.find(c => c.chain_id === chainId);
-  if (!chainCaps) {
-    throw new Error(`Chain ${chainId} not supported by relayer`);
-  }
-  return chainCaps.relayer_address;
-}
-
-export async function getFeeData(
-  chainId: number,
-  feeToken: string
-): Promise<FeeData> {
-  return jsonRpcCall<FeeData>("relayer_getFeeData", {
-    chain_id: chainId,
-    fee_token: feeToken,
-  });
-}
-
-export async function send7710Transaction(params: {
-  chain_id: number;
-  delegation_id: string;
-  delegation_json: Record<string, unknown>;
-  signed_delegation: string;
-  consumer_address: string;
-  call_data: string;
-  fee_token: string;
-  max_fee?: string;
-}): Promise<Send7710Result> {
-  return jsonRpcCall<Send7710Result>(
-    "relayer_send7710Transaction",
-    params
-  );
-}
-
-export async function getStatus(
-  relayerTxId: string
-): Promise<TxStatus> {
-  return jsonRpcCall<TxStatus>("relayer_getStatus", {
-    relayer_tx_id: relayerTxId,
-  });
-}
-
-export async function estimate7710Transaction(params: {
-  chain_id: number;
-  delegation_id: string;
-  delegation_json: Record<string, unknown>;
-  signed_delegation: string;
-  consumer_address: string;
-  call_data: string;
-}): Promise<Estimate7710Result> {
-  return jsonRpcCall<Estimate7710Result>(
-    "relayer_estimate7710Transaction",
-    params
-  );
+export function buildRelayerBundle(
+  delegation: Delegation7710,
+  feeExecution: Execution7710,
+  workExecutions: Execution7710[] = []
+): DelegatedTransaction7710 {
+  return {
+    permissionContext: [delegation],
+    executions: [feeExecution, ...workExecutions],
+  };
 }

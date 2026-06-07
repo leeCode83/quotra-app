@@ -94,7 +94,14 @@ export default function ProviderDashboardPage() {
     setRegistering(true);
     setRegisterError(null);
     try {
-      const delegationResult = await createProviderDelegation();
+      const configRes = await fetch("/api/providers/relayer-config");
+      const configData = await configRes.json();
+      if (!configData.success || !configData.config?.targetAddress) {
+        throw new Error("Failed to fetch relayer config: " + (configData.error || "Missing targetAddress"));
+      }
+
+      const targetAddress = configData.config.targetAddress;
+      const delegationResult = await createProviderDelegation(targetAddress);
       if (!delegationResult) {
         throw new Error("Delegation signing failed or was cancelled");
       }
@@ -113,7 +120,8 @@ export default function ProviderDashboardPage() {
         maxCompletionTokens: form.maxCompletionTokens,
         expiryDays: form.expiryDays,
         delegationId: delegationResult.delegationId,
-        signedDelegation: delegationResult.delegationJson,
+        permissionsContext: delegationResult.permissionsContext,
+        delegationManager: delegationResult.delegationManager,
       };
 
       const res = await fetch("/api/providers/listings", {
@@ -122,7 +130,9 @@ export default function ProviderDashboardPage() {
           "Content-Type": "application/json",
           "x-wallet-address": session.address,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload, (key, value) =>
+          typeof value === "bigint" ? value.toString() : value
+        ),
       });
 
       if (!res.ok) {

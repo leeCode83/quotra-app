@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { listingSchema } from "@/lib/validators";
-import { executeAsDelegator } from "@/lib/oneshot";
+
 
 export async function GET() {
   try {
@@ -94,7 +94,8 @@ export async function POST(request: NextRequest) {
         max_completion_tokens: data.max_completion_tokens,
         expires_at: data.expires_at,
         delegation_id: data.delegation_id,
-        signed_delegation: data.signed_delegation,
+        permissions_context: data.permissions_context,
+        delegation_manager: data.delegation_manager,
         encrypted_key: data.encrypted_key,
         key_iv: data.key_iv,
         key_auth_tag: data.key_auth_tag,
@@ -109,18 +110,6 @@ export async function POST(request: NextRequest) {
         { error: "Failed to create listing", details: error?.message },
         { status: 500 }
       );
-    }
-
-    // Submit delegation to 1Shot (non-blocking)
-    const usdcMethodId = process.env.ONE_SHOT_API_USDC_CONTRACT_METHOD_ID;
-    if (usdcMethodId) {
-      executeAsDelegator(
-        usdcMethodId,
-        [JSON.stringify(data.signed_delegation)],
-        { listing_id: listing.id, max_calls: data.max_calls }
-      ).catch((err: unknown) => {
-        console.warn("[listings] Delegation submission failed (non-blocking):", err);
-      });
     }
 
     return NextResponse.json({ success: true, listing }, { status: 201 });

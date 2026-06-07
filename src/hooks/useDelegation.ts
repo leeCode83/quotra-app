@@ -2,21 +2,13 @@
 
 import { useCallback, useState } from "react";
 import { useAccount, useWalletClient, usePublicClient } from "wagmi";
-import { keccak256, encodeAbiParameters, toHex, type Hex } from "viem";
+import { type Hex } from "viem";
 import { baseSepolia } from "viem/chains";
-import {
-  toMetaMaskSmartAccount,
-  Implementation,
-  createDelegation,
-  getSmartAccountsEnvironment,
-} from "@metamask/smart-accounts-kit";
-
-const QUOTRA_SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Hex;
+import { erc7715ProviderActions } from "@metamask/smart-accounts-kit/actions";
 
 export interface UseDelegationReturn {
-  createProviderDelegation: () => Promise<{ delegationId: Hex; signedDelegation: Hex; delegationJson: Record<string, unknown>; error?: never } | { error: string } | undefined>;
-  signedDelegation: Hex | null;
-  delegationJson: Record<string, unknown> | null;
+  createProviderDelegation: (targetAddress: string) => Promise<{ delegationId: string; permissionsContext: Record<string, unknown>; delegationManager: string; error?: never } | { error: string } | undefined>;
+  permissionsContext: Record<string, unknown> | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -26,13 +18,12 @@ export function useDelegation(): UseDelegationReturn {
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
 
-  const [signedDelegation, setSignedDelegation] = useState<Hex | null>(null);
-  const [delegationJson, setDelegationJson] = useState<Record<string, unknown> | null>(null);
+  const [permissionsContext, setPermissionsContext] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const createProviderDelegation = useCallback(
-    async () => {
+    async (targetAddress: string) => {
       if (!isConnected) {
         setError("Wallet not connected (isConnected is false)");
         return { error: "Wallet not connected (isConnected is false)" };
@@ -73,66 +64,54 @@ export function useDelegation(): UseDelegationReturn {
       setError(null);
 
       try {
-        const smartAccount = await toMetaMaskSmartAccount({
-          client: publicClient,
-          implementation: Implementation.Hybrid,
-          signer: { walletClient: currentWalletClient! },
-          deploySalt: "0x0" as Hex,
-          deployParams: [address as Hex, [], [], []],
-        });
 
-        const environment = getSmartAccountsEnvironment(84532);
 
-        const salt = toHex(crypto.getRandomValues(new Uint8Array(32)));
+        // Request EIP-7715 Execution Permissions
+        const clientWithPermissions = currentWalletClient!.extend(erc7715ProviderActions());
+        const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e") as Hex;
 
-        const delegation = createDelegation({
-          from: smartAccount.address,
-          to: QUOTRA_SERVER_ACCOUNT,
-          environment,
-          // This is Provider delegation to allow server to spend USDC on behalf of provider.
-          scope: {
-            type: "erc20TransferAmount",
-            tokenAddress: (process.env.NEXT_PUBLIC_USDC_ADDRESS ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e") as Hex,
-            maxAmount: 100000000n, // 100 USDC (6 decimals)
+        const expiry = Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60; // 90 days max
+
+        const grantedPermissions = await clientWithPermissions.requestExecutionPermissions([
+          {
+            chainId: wagmiChainId,
+            to: targetAddress as Hex,
+            permission: {
+              type: "erc20-token-periodic",
+              isAdjustmentAllowed: true,
+              data: {
+                tokenAddress: USDC_ADDRESS,
+                periodAmount: 1000000n,
+                periodDuration: 86400,
+                justification: "Pay 1Shot Relayer fees",
+              },
+            },
+            expiry,
           },
-          salt,
-        });
+        ]);
 
-        const signed = await smartAccount.signDelegation({ delegation });
+        if (!grantedPermissions || grantedPermissions.length === 0) {
+          throw new Error("No permissions granted from wallet.");
+        }
 
-        const delegationId = keccak256(
-          encodeAbiParameters(
-            [
-              { type: "address" },
-              { type: "address" },
-              { type: "bytes32" },
-              { type: "uint256" },
-            ],
-            [
-              delegation.delegate,
-              delegation.delegator,
-              delegation.authority,
-              BigInt(delegation.salt),
-            ]
-          )
-        );
-
-        const delegationJson: Record<string, unknown> = {
-          delegation,
-          signature: signed,
-        };
+        const permissionsContextValue = grantedPermissions[0]?.context;
+        if (!permissionsContextValue) {
+          throw new Error("No permissions context returned from wallet.");
+        }
+        
+        // Extract delegationManager from permission response if available, fallback to stateless deleGator
+        const delegationManager = grantedPermissions[0]?.delegationManager ?? "0x8213F90BA183Edbd031D1c6C088b9F0d5656dc02";
 
         const result = {
-          delegationId,
-          signedDelegation: signed,
-          delegationJson,
+          delegationId: permissionsContextValue,
+          permissionsContext: grantedPermissions[0] as unknown as Record<string, unknown>,
+          delegationManager: delegationManager as string,
         };
 
-        setSignedDelegation(result.signedDelegation);
-        setDelegationJson(result.delegationJson);
+        setPermissionsContext(result.permissionsContext);
         return result;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Delegation failed";
+        const message = err instanceof Error ? err.message : "Delegation request failed";
         setError(message);
         return { error: message };
       } finally {
@@ -144,8 +123,7 @@ export function useDelegation(): UseDelegationReturn {
 
   return {
     createProviderDelegation,
-    signedDelegation,
-    delegationJson,
+    permissionsContext,
     isLoading,
     error,
   };

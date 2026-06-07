@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "public-relayer": {
+      "source": "1Shot-API/skills",
+      "sourceType": "github",
+      "skillPath": "public-relayer/SKILL.md",
+      "computedHash": "7f2ed4b3cf0313fea0eb9fd76e3c2a20114c9c81dd253da7a7f7703144f9ff3a"
+    }
+  }
+}

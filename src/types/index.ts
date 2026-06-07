@@ -31,7 +31,8 @@ export interface Listing {
   status: string;
   expires_at: string;
   delegation_id: string | null;
-  signed_delegation: Record<string, unknown> | null;
+  permissions_context: Record<string, unknown> | null;
+  delegation_manager: string | null;
   encrypted_key: string | null;
   key_iv: string | null;
   key_auth_tag: string | null;

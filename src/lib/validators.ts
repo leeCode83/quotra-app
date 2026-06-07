@@ -49,8 +49,9 @@ export const createListingSchema = z.object({
   maxInputChars: z.number().int().min(100).max(8000).default(2000),
   maxCompletionTokens: z.number().int().min(50).max(2000).default(500),
   expiryDays: z.number().int().refine((v) => [7, 14, 30, 90].includes(v), "Expiry must be 7, 14, 30, or 90 days"),
-  delegationId: z.string().min(1, "ERC-7710 delegation ID is required."),
-  signedDelegation: z.record(z.string(), z.unknown()),
+  delegationId: z.string().min(1, "ERC-7715 context is required."),
+  permissionsContext: z.union([z.string(), z.record(z.string(), z.unknown())]),
+  delegationManager: z.string().min(1, "Delegation manager is required."),
 });
 
 /**
@@ -83,8 +84,9 @@ export const listingSchema = z.object({
   max_completion_tokens: z.number().int().min(50).max(2000).default(500),
   expires_at: z.string().regex(ISO_DATETIME_REGEX, "Invalid ISO 8601 datetime format. Expected format: 2024-01-01T00:00:00.000Z or with timezone offset"),
   expiry_days: z.number().int().refine((v) => [7, 14, 30, 90].includes(v), "Expiry must be 7, 14, 30, or 90 days").optional(),
-  delegation_id: z.string().min(1, "ERC-7710 delegation ID is required."),
-  signed_delegation: z.record(z.string(), z.unknown()),
+  delegation_id: z.string().min(1, "ERC-7715 context is required."),
+  permissions_context: z.union([z.string(), z.record(z.string(), z.unknown())]),
+  delegation_manager: z.string().min(1, "Delegation manager is required."),
   encrypted_key: z.string().min(1, "Encrypted API key is required."),
   key_iv: z.string().min(1, "Encryption IV is required."),
   key_auth_tag: z.string().min(1, "Encryption auth tag is required."),
