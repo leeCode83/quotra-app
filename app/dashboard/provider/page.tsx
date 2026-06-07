@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import NumberFlow from "@number-flow/react";
 import {
-  Plus, Loader2, AlertCircle, Wallet,
+  Plus, Loader2, Wallet,
   FileKey, List, Ban, Clock, Cpu, TrendingUp, Coins,
   ArrowRightLeft, LayoutDashboard
 } from "lucide-react";
@@ -79,7 +79,7 @@ export default function ProviderDashboardPage() {
       }
       return res.json();
     },
-    enabled: !!session.address,
+    enabled: session.isConnected && !!session.address && !isWrongChain,
   });
 
   const provider = dashboardData?.provider || null;
@@ -269,171 +269,135 @@ export default function ProviderDashboardPage() {
       </div>
 
       <div className="container mx-auto px-4 py-8 lg:py-12">
-        <Dialog open={showAuthModal}>
-          <DialogContent
-            className="sm:max-w-md [&>button]:hidden border-foreground/10 bg-card/90 backdrop-blur-xl"
-            onInteractOutside={(e) => e.preventDefault()}
-            onEscapeKeyDown={(e) => e.preventDefault()}
-          >
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                {!session.isConnected ? (
-                  <><Wallet className="h-5 w-5 text-primary" /> Connect Wallet</>
-                ) : isWrongChain ? (
-                  <><AlertCircle className="h-5 w-5 text-destructive" /> Wrong Network</>
-                ) : (
-                <><Wallet className="h-5 w-5 text-primary" /> Connect</>
-                )}
-              </DialogTitle>
-              <DialogDescription>
+        {showAuthModal && (
+          <div className="max-w-md mx-auto mt-12 space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight">Access Dashboard</h2>
+              <p className="text-muted-foreground">
                 {!session.isConnected
                   ? "Connect your wallet to access the provider dashboard."
-                  : isWrongChain
-                  ? "Please switch to Base Sepolia testnet."
-                  : "Sign a message to prove wallet ownership."}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-3">
-              <div 
-                className={cn(
-                  "flex items-center gap-3 p-3 rounded-lg border transition-colors",
-                  session.isConnected ? "border-success/30 bg-success/5" : "border-muted cursor-pointer hover:border-primary/50"
-                )}
-                onClick={() => !session.isConnected && connect()}
-              >
-                <div className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                  session.isConnected ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"
-                )}>1</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Connect Wallet</p>
-                  <p className="text-xs text-muted-foreground">
-                    {session.isConnected ? formatAddress(session.address) : (isConnecting ? "Connecting..." : "Not connected")}
-                  </p>
-                </div>
-                {session.isConnected && <Wallet className="h-4 w-4 text-success shrink-0" />}
-              </div>
-
-              <div 
-                className={cn(
-                  "flex items-center gap-3 p-3 rounded-lg border transition-colors",
-                  session.isConnected && !isWrongChain ? "border-success/30 bg-success/5" : (session.isConnected && isWrongChain ? "border-muted cursor-pointer hover:border-primary/50" : "border-muted opacity-50")
-                )}
-                onClick={() => isWrongChain && switchChain()}
-              >
-                <div className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                  session.isConnected && !isWrongChain ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"
-                )}>2</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Base Sepolia Network</p>
-                  <p className="text-xs text-muted-foreground">
-                    {isWrongChain ? "Wrong network detected. Click to switch." : "Connected to Base Sepolia"}
-                  </p>
-                </div>
-                {session.isConnected && !isWrongChain && <Cpu className="h-4 w-4 text-success shrink-0" />}
-              </div>
-
-              <div 
-                className={cn(
-                  "flex items-center gap-3 p-3 rounded-lg border transition-colors",
-                session.isConnected && !isWrongChain ? "border-muted" : "border-muted opacity-50"
-                )}
-                onClick={() => {}}
-              >
-                <div className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                "bg-muted text-muted-foreground"
-                )}>3</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Sign Authentication</p>
-                  <p className="text-xs text-muted-foreground">
-                {session.isConnected ? "Connected: " + (session.address?.slice(0,6) || "") + "..." : "Wallet Not Connected"}
-                  </p>
-                </div>
-                {session.isConnected ? (
-                  <Badge variant="outline" className="text-xs">
-                    {session.address?.slice(0,6) + "..." + session.address?.slice(-4)}
-                  </Badge>
-                ) : (
-                  <Button size="sm" onClick={() => connect()} disabled={isConnecting}>
-                    {isConnecting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                    Connect
-                  </Button>
-                )}
+                  : "Please switch to Base Sepolia testnet."}
+              </p>
             </div>
-              </div>
+            
+            <Card className="border-foreground/10 bg-card/50 backdrop-blur-xl">
+              <CardContent className="p-6 space-y-4">
+                <div 
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-lg border transition-colors",
+                    session.isConnected ? "border-success/30 bg-success/5" : "border-muted cursor-pointer hover:border-primary/50"
+                  )}
+                  onClick={() => !session.isConnected && connect()}
+                >
+                  <div className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
+                    session.isConnected ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"
+                  )}>1</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Connect Wallet</p>
+                    <p className="text-xs text-muted-foreground">
+                      {session.isConnected ? formatAddress(session.address) : (isConnecting ? "Connecting..." : "Not connected")}
+                    </p>
+                  </div>
+                  {session.isConnected && <Wallet className="h-4 w-4 text-success shrink-0" />}
+                </div>
 
-          </DialogContent>
-        </Dialog>
+                <div 
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-lg border transition-colors",
+                    session.isConnected && !isWrongChain ? "border-success/30 bg-success/5" : (session.isConnected && isWrongChain ? "border-muted cursor-pointer hover:border-primary/50" : "border-muted opacity-50")
+                  )}
+                  onClick={() => isWrongChain && switchChain()}
+                >
+                  <div className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
+                    session.isConnected && !isWrongChain ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"
+                  )}>2</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Base Sepolia Network</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isWrongChain ? "Wrong network detected. Click to switch." : "Connected to Base Sepolia"}
+                    </p>
+                  </div>
+                  {session.isConnected && !isWrongChain && <Cpu className="h-4 w-4 text-success shrink-0" />}
+                </div>
 
-        <Dialog open={isFirstTime}>
-          <DialogContent
-            className="sm:max-w-md [&>button]:hidden border-foreground/10 bg-card/90 backdrop-blur-xl"
-            onInteractOutside={(e) => e.preventDefault()}
-            onEscapeKeyDown={(e) => e.preventDefault()}
-          >
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FileKey className="h-5 w-5 text-primary" /> Register as Provider
-              </DialogTitle>
-              <DialogDescription>
+                {!session.isConnected ? (
+                  <Button className="w-full mt-2" onClick={() => connect()} disabled={isConnecting}>
+                    {isConnecting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wallet className="h-4 w-4 mr-2" />}
+                    Connect Wallet
+                  </Button>
+                ) : isWrongChain ? (
+                  <Button className="w-full mt-2" onClick={() => switchChain()}>
+                    <ArrowRightLeft className="h-4 w-4 mr-2" />
+                    Switch Network
+                  </Button>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {isFirstTime && (
+          <div className="max-w-md mx-auto mt-12 space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight">Register as Provider</h2>
+              <p className="text-muted-foreground">
                 Create your provider account to start monetizing your AI API quotas on Quotra.
-              </DialogDescription>
-            </DialogHeader>
+              </p>
+            </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-success/30 bg-success/5">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-success text-success-foreground">1</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Connect Wallet</p>
-                  <p className="text-xs text-muted-foreground">{formatAddress(session.address)}</p>
+            <Card className="border-foreground/10 bg-card/50 backdrop-blur-xl">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-success/30 bg-success/5">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-success text-success-foreground">1</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Connect Wallet</p>
+                    <p className="text-xs text-muted-foreground">{formatAddress(session.address)}</p>
+                  </div>
+                  <Wallet className="h-4 w-4 text-success shrink-0" />
                 </div>
-                <Wallet className="h-4 w-4 text-success shrink-0" />
-              </div>
 
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-success/30 bg-success/5">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-success text-success-foreground">2</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Base Sepolia Network</p>
-                  <p className="text-xs text-muted-foreground">Connected to Base Sepolia</p>
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-success/30 bg-success/5">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-success text-success-foreground">2</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Base Sepolia Network</p>
+                    <p className="text-xs text-muted-foreground">Connected to Base Sepolia</p>
+                  </div>
+                  <Cpu className="h-4 w-4 text-success shrink-0" />
                 </div>
-                <Cpu className="h-4 w-4 text-success shrink-0" />
-              </div>
 
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-muted cursor-pointer hover:border-primary/50 transition-colors">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-primary text-primary-foreground">3</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Register Provider</p>
-                  <p className="text-xs text-muted-foreground">
-                    {registering ? "Registering..." : "Click to register your wallet as a provider"}
-                  </p>
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-muted cursor-pointer hover:border-primary/50 transition-colors">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-primary text-primary-foreground">3</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Register Provider</p>
+                    <p className="text-xs text-muted-foreground">
+                      {registering ? "Registering..." : "Click to register your wallet as a provider"}
+                    </p>
+                  </div>
+                  {!registering && <ArrowRightLeft className="h-4 w-4 text-primary shrink-0" />}
                 </div>
-                {!registering && <ArrowRightLeft className="h-4 w-4 text-primary shrink-0" />}
-              </div>
 
-              {registerError && (
-                <p className="text-sm text-destructive font-medium">{registerError}</p>
-              )}
+                {registerError && (
+                  <p className="text-sm text-destructive font-medium">{registerError}</p>
+                )}
 
-              <div className="flex justify-end pt-2">
                 <Button
                   onClick={handleRegisterProvider}
                   disabled={registering}
-                  size="sm"
+                  className="w-full mt-2"
                 >
-                  {registering && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                  <FileKey className="h-4 w-4 mr-1" /> Register as Provider
+                  {registering ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileKey className="h-4 w-4 mr-2" />}
+                  Register as Provider
                 </Button>
-              </div>
-
-              <p className="text-xs text-muted-foreground text-center">
-                One-time registration. After this, you can create listings to sell your API quotas.
-              </p>
-            </div>
-          </DialogContent>
-        </Dialog>
+                
+                <p className="text-xs text-muted-foreground text-center pt-2">
+                  One-time registration. After this, you can create listings.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {!showAuthModal && provider && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
