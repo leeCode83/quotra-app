@@ -34,6 +34,7 @@ import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { cn, formatAddress } from "@/lib/utils";
 import { TransactionHistory, Transaction } from "@/components/TransactionHistory";
 import { useProviderClaim } from "@/hooks/useProviderClaim";
+import { useDelegation } from "@/hooks/useDelegation";
 
 const DEFAULT_MODEL_MAP: Record<string, string> = {
   openai: "gpt-4o-mini",
@@ -64,12 +65,13 @@ export default function ProviderDashboardPage() {
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const { claim } = useProviderClaim();
+  const { createProviderDelegation } = useDelegation();
 
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
     queryKey: ["provider-dashboard", session.address],
     queryFn: async () => {
-      const res = await fetch("/api/provider/dashboard", {
-    headers: { "x-wallet-address": session.address || "" },
+      const res = await fetch("/api/providers/dashboard", {
+        headers: { "x-wallet-address": session.address || "" },
       });
       if (!res.ok) {
         if (res.status === 404) return null; // No provider yet
@@ -89,37 +91,15 @@ export default function ProviderDashboardPage() {
   const totalEarned = provider ? (typeof provider.totalEarnedUsdc === "string" ? parseFloat(provider.totalEarnedUsdc) : provider.totalEarnedUsdc) : 0;
 
   const handleCombinedRegistration = useCallback(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (!(window as any).ethereum) {
-      return;
-    }
-    
     setRegistering(true);
     setRegisterError(null);
     try {
-      // Sign Delegation First
-      const currentTime = Math.floor(Date.now() / 1000);
-      const delegationMessage = JSON.stringify({
-        type: "erc7710",
-        delegator: session.address,
-        delegate: process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "",
-        chainId: 84532,
-        expiry: currentTime + 86400 * form.expiryDays,
-        issuedAt: currentTime,
-      });
+      const delegationResult = await createProviderDelegation();
+      if (!delegationResult) throw new Error("Delegation signing failed or was cancelled");
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const signature: string = await ((window as any).ethereum.request as any)({
-        method: "personal_sign",
-        params: [delegationMessage, session.address],
-      });
-
-      const delegationId = `del_${session.address.toLowerCase()}_${currentTime}`;
-      const signedDelegation = { message: delegationMessage, signature };
-
-      // Submit Combined Payload
       const payload = {
         walletAddress: session.address,
+        name: form.name,
         apiKey: form.apiKey,
         modelName: DEFAULT_MODEL_MAP[form.provider],
         pricePerCallUsdc: form.pricePerCallUsdc,
@@ -127,12 +107,11 @@ export default function ProviderDashboardPage() {
         maxInputChars: form.maxInputChars,
         maxCompletionTokens: form.maxCompletionTokens,
         expiryDays: form.expiryDays,
-        delegationId,
-        signedDelegation,
-        name: form.name,
+        delegationId: delegationResult.delegationId,
+        signedDelegation: delegationResult.delegationJson,
       };
 
-      const res = await fetch("/api/provider/register", {
+      const res = await fetch("/api/providers/listings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -154,14 +133,18 @@ export default function ProviderDashboardPage() {
     } finally {
       setRegistering(false);
     }
-  }, [form, session.address, queryClient]);
+  }, [form, session.address, queryClient, createProviderDelegation]);
 
   const handleRevoke = async (listingId: string) => {
     setRevokingId(listingId);
     try {
-      const res = await fetch(`/api/listings/${listingId}`, {
-        method: "DELETE",
-    headers: { "x-wallet-address": session.address }
+      const res = await fetch(`/api/providers/listings/${listingId}`, {
+        method: "PATCH",
+        headers: { 
+          "x-wallet-address": session.address,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ status: "revoked" })
       });
       if (!res.ok) {
         const err = await res.json();
@@ -182,7 +165,7 @@ export default function ProviderDashboardPage() {
     setRegistering(true);
     setRegisterError(null);
     try {
-      const res = await fetch("/api/provider/register-wallet", {
+      const res = await fetch("/api/providers", {
         method: "POST",
         headers: { "x-wallet-address": session.address || "" },
       });

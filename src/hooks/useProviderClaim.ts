@@ -92,7 +92,7 @@ export function useProviderClaim(): UseProviderClaimReturn {
     setClaimStatus("calculating");
     try {
       // Fetch provider info via wallet address header
-      const providerResponse = await fetch("/api/providers/register", {
+      const providerResponse = await fetch("/api/providers", {
         method: "GET",
         headers: {
           "x-wallet-address": address,

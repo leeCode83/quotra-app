@@ -75,7 +75,7 @@ export interface ExecuteMethodResult {
 
 export interface ExecuteAsDelegatorParams {
   methodId: string;
-  delegationId: string;
+  delegationData: string[];
   args: Record<string, unknown>;
 }
 
@@ -129,12 +129,12 @@ export async function executeMethod(
 
 export async function executeAsDelegator(
   methodId: string,
-  delegationId: string,
+  delegationData: string[],
   args: Record<string, unknown>
 ): Promise<ExecuteMethodResult> {
   const body: Record<string, unknown> = {
     args,
-    delegation_id: delegationId,
+    delegationData,
   };
 
   const res = await apiFetch(`/methods/${methodId}/executeAsDelegator`, {

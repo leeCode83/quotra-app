@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase-server";
-import { providerRegistrationSchema } from "@/lib/validators";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
+export const runtime = "nodejs";
+
+/**
+ * POST /api/providers
+ * Registers a wallet address as a provider.
+ * Idempotent: returns 200 with alreadyRegistered: true if the provider exists.
+ */
 export async function POST(request: NextRequest) {
   try {
     const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
@@ -12,59 +18,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const parseResult = providerRegistrationSchema.safeParse(body);
-    if (!parseResult.success) {
+    if (!/^0x[a-f0-9]{40}$/.test(walletAddress)) {
       return NextResponse.json(
-        { error: "Validation failed", details: parseResult.error.format() },
+        { error: "Invalid wallet address" },
         { status: 400 }
       );
     }
 
-    if (parseResult.data.wallet_address.toLowerCase() !== walletAddress) {
-      return NextResponse.json(
-        { error: "Unauthorized: wallet address mismatch" },
-        { status: 401 }
-      );
-    }
+    const supabase = supabaseAdmin;
 
-    const supabase = await createClient();
-
+    // Check if already registered
     const { data: existing } = await supabase
       .from("providers")
-      .select("id")
+      .select("id, wallet_address, created_at")
       .ilike("wallet_address", walletAddress)
       .maybeSingle();
 
     if (existing) {
       return NextResponse.json(
-        { error: "Provider already registered for this wallet" },
-        { status: 409 }
+        { success: true, provider: existing, alreadyRegistered: true },
+        { status: 200 }
       );
     }
 
-    const { data: provider, error } = await supabase
+    // Register new provider
+    const { data: newProvider, error: insertError } = await supabase
       .from("providers")
-      .insert({
-        wallet_address: walletAddress,
-      })
-      .select("id")
+      .insert({ wallet_address: walletAddress })
+      .select("id, wallet_address, created_at")
       .single();
 
-    if (error || !provider) {
-      console.error("[providers/register] Insert error:", error);
+    if (insertError || !newProvider) {
+      console.error("[providers] Insert error:", insertError);
       return NextResponse.json(
-        { error: "Failed to register provider", details: error?.message },
+        { error: "Failed to register provider", details: insertError?.message },
         { status: 500 }
       );
     }
 
     return NextResponse.json(
-      { success: true, provider_id: provider.id },
+      { success: true, provider: newProvider, alreadyRegistered: false },
       { status: 201 }
     );
   } catch (err) {
-    console.error("[providers/register] Unexpected error:", err);
+    console.error("[providers] Unexpected error:", err);
     return NextResponse.json(
       { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
@@ -72,6 +69,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * GET /api/providers
+ * Fetches the provider's profile and earnings statistics.
+ */
 export async function GET(request: NextRequest) {
   try {
     const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = supabaseAdmin;
     const { data: provider, error } = await supabase
       .from("providers")
       .select("id, wallet_address, pending_earnings_usdc, total_earned_usdc, created_at")

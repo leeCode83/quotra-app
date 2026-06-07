@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
     if (usdcMethodId) {
       executeAsDelegator(
         usdcMethodId,
-        data.delegation_id,
+        [JSON.stringify(data.signed_delegation)],
         { listing_id: listing.id, max_calls: data.max_calls }
       ).catch((err: unknown) => {
         console.warn("[listings] Delegation submission failed (non-blocking):", err);

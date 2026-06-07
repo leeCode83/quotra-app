@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-export async function proxy(_request: NextRequest): Promise<NextResponse> {
+export async function proxy(): Promise<NextResponse> {
   return NextResponse.next();
 }
 

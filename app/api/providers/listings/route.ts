@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { providerFullRegistrationSchema } from "@/lib/validators";
+import { createListingSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/encryption";
 import { executeAsDelegator } from "@/lib/oneshot";
 
 export const runtime = "nodejs";
 
+/**
+ * POST /api/providers/listings
+ * Creates a new AI service listing for a provider.
+ * This also encrypts the provider's API key and delegates to 1Shot.
+ */
 export async function POST(request: NextRequest) {
   try {
     const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
@@ -14,7 +19,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const parseResult = providerFullRegistrationSchema.safeParse(body);
+    const parseResult = createListingSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json(
         { error: "Validation failed", details: parseResult.error.format() },
@@ -56,8 +61,8 @@ export async function POST(request: NextRequest) {
     // 2. Encrypt AI Provider API Key
     const { encrypted_key, key_iv, key_auth_tag } = await encrypt(data.apiKey);
 
-    if (!data.delegationId) {
-      return NextResponse.json({ error: "Delegation ID is required" }, { status: 400 });
+    if (!data.signedDelegation) {
+      return NextResponse.json({ error: "Signed delegation is required" }, { status: 400 });
     }
 
     // 3. Create Listing
@@ -94,7 +99,7 @@ export async function POST(request: NextRequest) {
     // 4. Submit to 1Shot (non-blocking)
     const usdcMethodId = process.env.ONE_SHOT_API_USDC_CONTRACT_METHOD_ID;
     if (usdcMethodId) {
-      executeAsDelegator(usdcMethodId, data.delegationId, { listing_id: listing.id, max_calls: data.maxCalls }).catch(console.warn);
+      executeAsDelegator(usdcMethodId, [JSON.stringify(data.signedDelegation)], { listing_id: listing.id, max_calls: data.maxCalls }).catch(console.warn);
     }
 
     return NextResponse.json({

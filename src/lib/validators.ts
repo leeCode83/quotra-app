@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Zod validation schemas for Quotra API
  * Used for validating API requests and form data
  *
@@ -24,22 +24,21 @@ const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\
 import { isValidModel } from "@/lib/ai-providers/models";
 
 /**
- * Schema for provider registration
+ * Schema for basic provider registration
  */
-export const providerRegistrationSchema = z.object({
+export const providerWalletSchema = z.object({
   wallet_address: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format. Must be 0x followed by 40 hex characters.").transform(val => val.toLowerCase()),
-  name: z.string().min(3, "Name must be at least 3 characters long."),
 });
 
 /**
- * Inferred type from providerRegistrationSchema
+ * Inferred type from providerWalletSchema
  */
-export type ProviderRegistration = z.infer<typeof providerRegistrationSchema>;
+export type ProviderWallet = z.infer<typeof providerWalletSchema>;
 
 /**
  * Schema for combined provider registration and listing creation
  */
-export const providerFullRegistrationSchema = z.object({
+export const createListingSchema = z.object({
   walletAddress: z.string().regex(WALLET_ADDRESS_REGEX, "Invalid wallet address format.").transform(val => val.toLowerCase()),
   name: z.string().min(3, "Name must be at least 3 characters long.").optional(),
   /** API key for the selected AI provider (OpenAI / Anthropic / Google Gemini) */
@@ -55,9 +54,21 @@ export const providerFullRegistrationSchema = z.object({
 });
 
 /**
- * Inferred type from providerFullRegistrationSchema
+ * Inferred type from createListingSchema
  */
-export type ProviderFullRegistration = z.infer<typeof providerFullRegistrationSchema>;
+export type CreateListing = z.infer<typeof createListingSchema>;
+
+/**
+ * Schema for updating an existing listing (e.g. status updates)
+ */
+export const updateListingSchema = z.object({
+  status: z.enum(["active", "paused", "revoked", "expired"]),
+});
+
+/**
+ * Inferred type from updateListingSchema
+ */
+export type UpdateListing = z.infer<typeof updateListingSchema>;
 
 /**
  * Schema for creating/updating a listing

@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useAccount, useWalletClient, usePublicClient } from "wagmi";
-import { keccak256, encodeAbiParameters, type Hex } from "viem";
+import { keccak256, encodeAbiParameters, toHex, type Hex } from "viem";
 import {
   toMetaMaskSmartAccount,
   Implementation,
@@ -14,8 +14,9 @@ import {
 const QUOTRA_SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Hex;
 
 export interface UseDelegationReturn {
-  createProviderDelegation: () => Promise<{ delegationId: Hex; signedDelegation: Hex } | undefined>;
+  createProviderDelegation: () => Promise<{ delegationId: Hex; signedDelegation: Hex; delegationJson: Record<string, unknown> } | undefined>;
   signedDelegation: Hex | null;
+  delegationJson: Record<string, unknown> | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -26,6 +27,7 @@ export function useDelegation(): UseDelegationReturn {
   const publicClient = usePublicClient();
 
   const [signedDelegation, setSignedDelegation] = useState<Hex | null>(null);
+  const [delegationJson, setDelegationJson] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +52,8 @@ export function useDelegation(): UseDelegationReturn {
 
         const environment = getSmartAccountsEnvironment(84532);
 
+        const salt = toHex(crypto.getRandomValues(new Uint8Array(32)));
+
         const delegation = createDelegation({
           from: smartAccount.address,
           to: QUOTRA_SERVER_ACCOUNT,
@@ -58,6 +62,7 @@ export function useDelegation(): UseDelegationReturn {
             type: ScopeType.NativeTokenTransferAmount,
             maxAmount: 0n,
           },
+          salt,
         });
 
         const signed = await smartAccount.signDelegation({ delegation });
@@ -79,12 +84,19 @@ export function useDelegation(): UseDelegationReturn {
           )
         );
 
+        const delegationJson: Record<string, unknown> = {
+          delegation,
+          signature: signed,
+        };
+
         const result = {
           delegationId,
           signedDelegation: signed,
+          delegationJson,
         };
 
         setSignedDelegation(result.signedDelegation);
+        setDelegationJson(result.delegationJson);
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Delegation failed";
@@ -99,6 +111,7 @@ export function useDelegation(): UseDelegationReturn {
   return {
     createProviderDelegation,
     signedDelegation,
+    delegationJson,
     isLoading,
     error,
   };
