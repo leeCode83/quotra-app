@@ -8,6 +8,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 vi.mock("@/lib/supabase-admin", () => ({
   supabaseAdmin: {
     from: vi.fn(),
+    rpc: vi.fn(),
   },
 }));
 
@@ -102,19 +103,14 @@ describe("API /providers/listings", () => {
         error: null,
       });
 
-      const mockUpdate = vi.fn().mockReturnThis();
-      const mockUpdateEq = vi.fn().mockResolvedValue({ error: null });
-
       (supabaseAdmin.from as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
         select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockImplementation((col) => {
-          if (col === "id" && !mockUpdate.mock.calls.length) {
-            return { single: mockSelectSingle };
-          }
-          return mockUpdateEq;
+        eq: vi.fn().mockImplementation(() => {
+          return { single: mockSelectSingle };
         }),
-        update: mockUpdate,
       }));
+
+      (supabaseAdmin.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ error: null });
 
       const res = await PATCH(req, { params: Promise.resolve({ listingId: "123" }) });
       expect(res.status).toBe(200);

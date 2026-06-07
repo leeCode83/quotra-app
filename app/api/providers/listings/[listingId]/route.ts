@@ -50,11 +50,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized: you do not own this listing" }, { status: 403 });
     }
 
-    // Update
-    const { error: updateError } = await supabase
-      .from("listings")
-      .update(parseResult.data)
-      .eq("id", listingId);
+    // Update using RPC for atomicity
+    const { error: updateError } = await supabase.rpc("update_listing_status", {
+      p_listing_id: listingId,
+      p_status: parseResult.data.status,
+    });
 
     if (updateError) {
       return NextResponse.json({ error: "Failed to update listing", details: updateError.message }, { status: 500 });
