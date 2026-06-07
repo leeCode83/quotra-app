@@ -3,15 +3,16 @@ import { baseSepolia } from "viem/chains";
 import type { WalletSession } from "@/types";
 
 export function useWallet() {
-  const { address, isConnected, chain } = useAccount();
+  const { address, isConnected, chain, chainId: connectedChainId } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
   const { data: balance } = useBalance({ address });
-  const currentChainId = useChainId();
+  const wagmiChainId = useChainId();
+  const currentChainId = connectedChainId ?? wagmiChainId ?? baseSepolia.id;
 
   const session: WalletSession = {
     address: address ?? "",
-    chainId: currentChainId ?? baseSepolia.id,
+    chainId: currentChainId,
     isConnected,
   };
 

@@ -45,7 +45,7 @@ const DEFAULT_MODEL_MAP: Record<string, string> = {
 const emptyListingForm = {
   name: "",
   provider: "",
-  pricePerCallUsdc: 0.001,
+  pricePerCallUsdc: "0.001",
   maxCalls: 100,
   maxInputChars: 2000,
   maxCompletionTokens: 500,
@@ -95,14 +95,19 @@ export default function ProviderDashboardPage() {
     setRegisterError(null);
     try {
       const delegationResult = await createProviderDelegation();
-      if (!delegationResult) throw new Error("Delegation signing failed or was cancelled");
+      if (!delegationResult) {
+        throw new Error("Delegation signing failed or was cancelled");
+      }
+      if ("error" in delegationResult) {
+        throw new Error(`Delegation failed: ${delegationResult.error}`);
+      }
 
       const payload = {
         walletAddress: session.address,
         name: form.name,
         apiKey: form.apiKey,
         modelName: DEFAULT_MODEL_MAP[form.provider],
-        pricePerCallUsdc: form.pricePerCallUsdc,
+        pricePerCallUsdc: Number(form.pricePerCallUsdc),
         maxCalls: form.maxCalls,
         maxInputChars: form.maxInputChars,
         maxCompletionTokens: form.maxCompletionTokens,
@@ -203,7 +208,18 @@ export default function ProviderDashboardPage() {
       <div className="grid grid-cols-2 gap-4">
         <div className="grid gap-2">
           <Label htmlFor="price">Price per Call (USDC)</Label>
-          <Input id="price" type="number" step="0.0001" value={form.pricePerCallUsdc} onChange={(e) => setForm({ ...form, pricePerCallUsdc: Number(e.target.value) })} />
+          <Input 
+            id="price" 
+            type="text" 
+            inputMode="decimal"
+            value={form.pricePerCallUsdc} 
+            onChange={(e) => {
+              const val = e.target.value.replace(/,/g, '.');
+              if (/^\d*\.?\d*$/.test(val)) {
+                setForm({ ...form, pricePerCallUsdc: val });
+              }
+            }} 
+          />
         </div>
         <div className="grid gap-2">
           <Label htmlFor="maxCalls">Max Total Calls</Label>

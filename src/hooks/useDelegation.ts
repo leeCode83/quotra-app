@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useAccount, useWalletClient, usePublicClient } from "wagmi";
 import { keccak256, encodeAbiParameters, toHex, type Hex } from "viem";
+import { baseSepolia } from "viem/chains";
 import {
   toMetaMaskSmartAccount,
   Implementation,
@@ -13,7 +14,7 @@ import {
 const QUOTRA_SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Hex;
 
 export interface UseDelegationReturn {
-  createProviderDelegation: () => Promise<{ delegationId: Hex; signedDelegation: Hex; delegationJson: Record<string, unknown> } | undefined>;
+  createProviderDelegation: () => Promise<{ delegationId: Hex; signedDelegation: Hex; delegationJson: Record<string, unknown>; error?: never } | { error: string } | undefined>;
   signedDelegation: Hex | null;
   delegationJson: Record<string, unknown> | null;
   isLoading: boolean;
@@ -32,9 +33,40 @@ export function useDelegation(): UseDelegationReturn {
 
   const createProviderDelegation = useCallback(
     async () => {
-      if (!isConnected || !address || !walletClient || !publicClient) {
-        setError("Wallet not connected");
-        return;
+      if (!isConnected) {
+        setError("Wallet not connected (isConnected is false)");
+        return { error: "Wallet not connected (isConnected is false)" };
+      }
+      if (!address) {
+        setError("Wallet not connected (address is missing)");
+        return { error: "Wallet not connected (address is missing)" };
+      }
+
+      const wagmiChainId = await publicClient?.getChainId();
+      if (wagmiChainId !== baseSepolia.id) {
+        setError("Please switch your wallet to Base Sepolia network first.");
+        return { error: "Please switch your wallet to Base Sepolia network first." };
+      }
+
+      let currentWalletClient = walletClient;
+      if (!currentWalletClient) {
+        if (typeof window !== "undefined" && window.ethereum) {
+          // Fallback if wagmi hasn't provided it yet
+          const { createWalletClient, custom } = await import("viem");
+          currentWalletClient = createWalletClient({
+            account: address as Hex,
+            chain: baseSepolia,
+            transport: custom(window.ethereum),
+          }) as typeof walletClient;
+        } else {
+          setError("Wallet not connected (walletClient is missing and window.ethereum not found)");
+          return { error: "Wallet not connected (walletClient is missing and window.ethereum not found)" };
+        }
+      }
+
+      if (!publicClient) {
+        setError("Wallet not connected (publicClient is missing)");
+        return { error: "Wallet not connected (publicClient is missing)" };
       }
 
       setIsLoading(true);
@@ -44,7 +76,7 @@ export function useDelegation(): UseDelegationReturn {
         const smartAccount = await toMetaMaskSmartAccount({
           client: publicClient,
           implementation: Implementation.Hybrid,
-          signer: { walletClient },
+          signer: { walletClient: currentWalletClient! },
           deploySalt: "0x0" as Hex,
           deployParams: [address as Hex, [], [], []],
         });
@@ -102,6 +134,7 @@ export function useDelegation(): UseDelegationReturn {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Delegation failed";
         setError(message);
+        return { error: message };
       } finally {
         setIsLoading(false);
       }

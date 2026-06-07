@@ -62,11 +62,12 @@ function detectMetaMask(): boolean {
 }
 
 export function useWalletConnection(): WalletConnectionState {
-  const { address, isConnected, isConnecting: wagmiIsConnecting } = useAccount();
+  const { address, isConnected, isConnecting: wagmiIsConnecting, chainId: connectedChainId } = useAccount();
   const { connectAsync } = useConnect();
   const { disconnect } = useDisconnect();
   const { data: balanceData } = useBalance({ address });
-  const chainId = useChainId();
+  const wagmiChainId = useChainId();
+  const chainId = connectedChainId ?? wagmiChainId;
   const { switchChainAsync } = useSwitchChain();
 
   const [error, setError] = useState<WalletConnectionError>(null);
