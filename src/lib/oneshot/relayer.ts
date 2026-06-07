@@ -1,6 +1,6 @@
 const RELAYER_URL =
   process.env.ONE_SHOT_RELAYER_URL ??
-  "https://relayer.1shotapi.dev/relayers";
+  "https://relayer.1shotapi.com/relayers";
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -91,6 +91,19 @@ export interface Estimate7710Result {
 
 export async function getCapabilities(): Promise<RelayerCapabilities> {
   return jsonRpcCall<RelayerCapabilities>("relayer_getCapabilities");
+}
+
+/**
+ * Returns the correct targetAddress (relayer address) from capabilities for a given chainId.
+ * This address must be used as the 'to' address for delegation.
+ */
+export async function getRelayerTargetAddress(chainId: number): Promise<string> {
+  const caps = await getCapabilities();
+  const chainCaps = caps.chains.find(c => c.chain_id === chainId);
+  if (!chainCaps) {
+    throw new Error(`Chain ${chainId} not supported by relayer`);
+  }
+  return chainCaps.relayer_address;
 }
 
 export async function getFeeData(

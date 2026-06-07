@@ -3,7 +3,7 @@
 import { use, useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { ArrowLeft, Send, Loader2, Wallet, DollarSign, AlertCircle, Cpu } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Wallet, AlertCircle, Cpu } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,17 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
 import { createClient } from "@/lib/supabase-client";
-import { x402Fetch, type X402PaymentRequired } from "@/lib/x402-fetch";
 import type { ListingWithProvider } from "@/types";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useX402WithDelegation } from "@/hooks/useX402WithDelegation";
+import { GrantPermissionButton } from "@/components/web3/GrantPermissionButton";
 
 interface Message {
   role: "user" | "assistant";
@@ -36,12 +30,37 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const [paymentRequired, setPaymentRequired] = useState<X402PaymentRequired | null>(null);
-  const [pendingMessage, setPendingMessage] = useState("");
-  const [paymentPending, setPaymentPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [savedPermissionContext, setSavedPermissionContext] = useState<any>(null);
+  const [isCheckingPermission, setIsCheckingPermission] = useState(false);
+
+  const checkPermission = async () => {
+    if (!address || !listingId) return;
+    setIsCheckingPermission(true);
+    try {
+      const res = await fetch(`/api/permissions?listing_id=${listingId}&wallet_address=${address}`);
+      const data = await res.json();
+      if (data.hasPermission) {
+        setSavedPermissionContext(data.permissionContext);
+      }
+    } catch (err) {
+      console.error("Failed to check permission", err);
+    } finally {
+      setIsCheckingPermission(false);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    checkPermission();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, listingId]);
+
+  const { sessionAccount } = usePermissions();
+  const { fetchWithPayment, isReady } = useX402WithDelegation(savedPermissionContext, sessionAccount);
 
   const { data: listing, isLoading: listingLoading } = useQuery<ListingWithProvider>({
     queryKey: ["listing", listingId],
@@ -62,87 +81,40 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
   }, [messages]);
 
   const delegationId = listing?.delegation_id;
-  const chatEndpoint = delegationId ? "/api/v1/" + delegationId + "/chat" : null;
+  const chatEndpoint = delegationId ? `/api/v1/${delegationId}/chat` : null;
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || isLoading || !chatEndpoint) return;
+    if (!text || isLoading || !chatEndpoint || !fetchWithPayment) return;
 
     setInput("");
     setError(null);
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setIsLoading(true);
-    setPendingMessage(text);
 
     try {
-      const result = await x402Fetch(chatEndpoint, {
+      const result = await fetchWithPayment(chatEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat: text }),
       });
 
-      if (result.status === 402 && !result.ok) {
-        const pr = (result.data as { paymentRequired?: X402PaymentRequired }).paymentRequired;
-        if (pr) {
-          setPaymentRequired(pr);
-          setShowPaymentDialog(true);
-          return;
-        }
-      }
-
       if (result.ok) {
-        const responseText = (result.data as { text?: string })?.text || JSON.stringify(result.data);
+        const data = await result.json();
+        const responseText = data.text || JSON.stringify(data);
         setMessages((prev) => [...prev, { role: "assistant", content: responseText }]);
       } else {
-        setError(
-          result.data && typeof result.data === "object" && "error" in (result.data as object)
-            ? (result.data as { error: string }).error
-            : "Request failed with status " + result.status
-        );
+        let errorMsg = `Request failed with status ${result.status}`;
+        try {
+          const data = await result.json();
+          if (data.error) errorMsg = data.error;
+        } catch {}
+        setError(errorMsg);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setIsLoading(false);
-      setPendingMessage("");
-    }
-  };
-
-  const handlePayAndRetry = async () => {
-    if (!paymentRequired || !chatEndpoint || !address) return;
-
-    setPaymentPending(true);
-    setShowPaymentDialog(false);
-
-    try {
-      // For MVP demo: simulate payment proof
-      // In production, use x402/evm client to create payment payload
-      const txHash = "demo_tx_" + Date.now();
-
-      const retryResult = await x402Fetch(chatEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-PAYMENT": txHash,
-        },
-        body: JSON.stringify({ chat: pendingMessage }),
-      });
-
-      if (retryResult.ok) {
-        const responseText = (retryResult.data as { text?: string })?.text || JSON.stringify(retryResult.data);
-        setMessages((prev) => [...prev, { role: "assistant", content: responseText }]);
-      } else {
-        setError(
-          retryResult.data && typeof retryResult.data === "object" && "error" in (retryResult.data as object)
-            ? (retryResult.data as { error: string }).error
-            : "Request failed after payment"
-        );
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment failed");
-    } finally {
-      setPaymentPending(false);
-      setPaymentRequired(null);
     }
   };
 
@@ -210,9 +182,15 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
                   <span>{listing.remaining_calls} / {listing.max_calls}</span>
                 </div>
                 <div className="border-t my-2" />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground mb-4">
                   Pay-per-call AI endpoint. Each message costs the listed price.
                 </p>
+
+                {isConnected && !savedPermissionContext && !isCheckingPermission && (
+                  <div className="pt-2 border-t">
+                    <GrantPermissionButton listingId={listingId} onGranted={checkPermission} />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -237,11 +215,15 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
                       <p className="text-sm text-muted-foreground mt-1">
                         Type a message below to try this AI model.
                       </p>
-                      {!isConnected && (
+                      {!isConnected ? (
                         <Button className="mt-4" onClick={() => connect()}>
                           Connect Wallet to Start
                         </Button>
-                      )}
+                      ) : !savedPermissionContext && !isCheckingPermission ? (
+                        <div className="mt-4 p-4 border rounded-lg bg-muted/50 text-sm text-muted-foreground">
+                          Please grant spending permission in the sidebar to use this API.
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 )}
@@ -268,8 +250,8 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
                 {error && (
                   <div className="flex justify-center">
                     <div className="bg-destructive/10 text-destructive rounded-lg px-4 py-2 text-sm flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4" />
-                      {error}
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      <span className="break-words">{error}</span>
                     </div>
                   </div>
                 )}
@@ -280,16 +262,16 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
               <div className="p-4 border-t shrink-0">
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Type your message..."
+                    placeholder={!isReady ? "Awaiting permission..." : "Type your message..."}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-                    disabled={isLoading || paymentPending || !isConnected || !chatEndpoint}
+                    disabled={isLoading || !isConnected || !chatEndpoint || !isReady}
                     className="flex-1"
                   />
                   <Button
                     onClick={handleSend}
-                    disabled={isLoading || paymentPending || !input.trim() || !isConnected || !chatEndpoint}
+                    disabled={isLoading || !input.trim() || !isConnected || !chatEndpoint || !isReady}
                     size="icon"
                   >
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -300,56 +282,6 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
           </div>
         </div>
       </div>
-
-      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-primary" />
-              Payment Required
-            </DialogTitle>
-            <DialogDescription>
-              This AI model requires payment per request. Confirm to continue.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="bg-muted rounded-lg p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Amount</span>
-                <span className="font-semibold">${paymentRequired?.amount || "0"} USDC</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Network</span>
-                <span className="font-mono text-xs">{paymentRequired?.network || "eip155:84532"}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Recipient</span>
-                <span className="font-mono text-xs">
-                  {(paymentRequired?.payTo || "").slice(0, 6)}...{(paymentRequired?.payTo || "").slice(-4)}
-                </span>
-              </div>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Your wallet will prompt you to confirm this transaction.
-            </p>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setShowPaymentDialog(false); setPaymentRequired(null); }}>
-              Cancel
-            </Button>
-            <Button onClick={handlePayAndRetry} disabled={paymentPending}>
-              {paymentPending ? (
-                <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Processing...</>
-              ) : (
-                <><Wallet className="h-4 w-4 mr-1" /> Pay & Send</>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -9,7 +9,7 @@
  * No JWT, no Bearer token, no custom middleware pipeline.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
 export async function proxy(): Promise<NextResponse> {
   return NextResponse.next();

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Quotra x402 Payment Proxy Configuration
  *
  * Sets up the shared @x402/next resource server, facilitator client,
@@ -23,7 +23,7 @@ import { HTTPFacilitatorClient } from "@x402/core/http"
 import { ExactEvmScheme } from "@x402/evm/exact/server"
 
 const FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator"
-export const QUOTRA_TREASURY_ADDRESS = process.env.QUOTRA_TREASURY_ADDRESS ?? "0xYourTreasuryAddress"
+export const QUOTRA_TREASURY_ADDRESS = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "") as `0x${string}`
 export const NETWORK = "eip155:84532"
 
 export const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL })

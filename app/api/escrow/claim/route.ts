@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       .from("claim_history")
       .select("amount_usdc")
       .eq("provider_id", provider.id)
-      .eq("status", "completed");
+      .in("status", ["completed", "pending"]);
 
     const totalClaimed = (claims ?? []).reduce(
       (sum, c) => sum + parseFloat(c.amount_usdc ?? "0"),

@@ -8,7 +8,6 @@ import {
   Implementation,
   createDelegation,
   getSmartAccountsEnvironment,
-  ScopeType,
 } from "@metamask/smart-accounts-kit";
 
 const QUOTRA_SERVER_ACCOUNT = (process.env.NEXT_PUBLIC_PAY_TO_ADDRESS ?? "0x0000000000000000000000000000000000000000") as Hex;
@@ -58,9 +57,11 @@ export function useDelegation(): UseDelegationReturn {
           from: smartAccount.address,
           to: QUOTRA_SERVER_ACCOUNT,
           environment,
+          // This is Provider delegation to allow server to spend USDC on behalf of provider.
           scope: {
-            type: ScopeType.NativeTokenTransferAmount,
-            maxAmount: 0n,
+            type: "erc20TransferAmount",
+            tokenAddress: (process.env.NEXT_PUBLIC_USDC_ADDRESS ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e") as Hex,
+            maxAmount: 100000000n, // 100 USDC (6 decimals)
           },
           salt,
         });
