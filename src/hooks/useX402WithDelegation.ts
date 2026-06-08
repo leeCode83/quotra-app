@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { createx402DelegationProvider } from "@metamask/smart-accounts-kit/experimental";
 import { x402Erc7710Client } from "@metamask/x402";
-import { x402Client, x402HTTPClient } from "@x402/core/client";
+import { x402Client } from "@x402/core/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import type { RequestExecutionPermissionsReturnType } from "@metamask/smart-accounts-kit/actions";
 import { type LocalAccount } from "viem/accounts";
@@ -24,10 +24,9 @@ export function useX402WithDelegation(
     });
 
     const coreClient = new x402Client().register('eip155:*', erc7710Client);
-    const httpClient = new x402HTTPClient(coreClient);
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return wrapFetchWithPayment(fetch, httpClient as any);
+    return wrapFetchWithPayment(fetch, coreClient as any);
   }, [permissionContext, sessionAccount]);
 
   return { fetchWithPayment, isReady: !!fetchWithPayment };

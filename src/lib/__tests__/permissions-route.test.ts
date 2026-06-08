@@ -7,13 +7,13 @@ const { mockSupabase } = vi.hoisted(() => {
     mockSupabase: {
       from: vi.fn().mockReturnThis(),
       select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: vi.fn().mockReturnThis(),
       update: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       gt: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockReturnThis(),
-      single: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
     }
   };
 });
@@ -96,7 +96,7 @@ describe('Permissions API Route', () => {
         body: JSON.stringify(reqBody),
       });
 
-      mockSupabase.upsert.mockResolvedValue({ data: null, error: null });
+      mockSupabase.single.mockResolvedValue({ data: { id: 'consumer-123' }, error: null });
 
       const res = await POST(req);
       const data = await res.json();
@@ -104,8 +104,9 @@ describe('Permissions API Route', () => {
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
       
-      // Verify upsert calls
-      expect(mockSupabase.upsert).toHaveBeenCalledTimes(2); // One for consumer, one for permission
+      // Verify upsert and insert calls
+      expect(mockSupabase.upsert).toHaveBeenCalledTimes(1);
+      expect(mockSupabase.insert).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -65,6 +65,9 @@ const routeConfig: RouteConfig = {
       payTo: QUOTRA_TREASURY_ADDRESS,
       price: dynamicPrice,
       network: NETWORK,
+      extra: {
+        assetTransferMethod: "erc7710",
+      },
     },
   ],
   description: "Quotra AI API call",

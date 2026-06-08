@@ -1,17 +1,20 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { ArrowLeft, Beaker, Check, Copy, Shield, Timer, Terminal, Wallet, Zap } from "lucide-react";
+import { ArrowLeft, Beaker, Check, Copy, Shield, Timer, Terminal, Wallet, Zap, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase-client";
 import { formatPrice } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ListingWithProvider } from "@/types";
 import { useAccount } from "wagmi";
+import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { GrantPermissionButton } from "@/components/web3/GrantPermissionButton";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -28,9 +31,35 @@ const itemVariants = {
 
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
+  const { connect } = useWalletConnection();
 
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [savedPermissionContext, setSavedPermissionContext] = useState<any>(null);
+  const [isCheckingPermission, setIsCheckingPermission] = useState(false);
+
+  const checkPermission = async () => {
+    if (!address || !id) return;
+    setIsCheckingPermission(true);
+    try {
+      const res = await fetch(`/api/permissions?listing_id=${id}&wallet_address=${address}`);
+      const data = await res.json();
+      if (data.hasPermission) {
+        setSavedPermissionContext(data.permissionContext);
+      }
+    } catch (err) {
+      console.error("Failed to check permission", err);
+    } finally {
+      setIsCheckingPermission(false);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    checkPermission();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, id]);
 
   const { data: listing, isLoading, error } = useQuery<ListingWithProvider>({
     queryKey: ["listing", id],
@@ -146,72 +175,164 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </motion.div>
 
-              <motion.div variants={itemVariants}>
-                <Card className="overflow-hidden border-purple-500/5">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                      About
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                      {listing.description || "No description provided."}
-                    </p>
-                  </CardContent>
-                </Card>
-              </motion.div>
+              <Tabs defaultValue="overview" className="space-y-6">
+                <motion.div variants={itemVariants}>
+                  <TabsList className="bg-background/50 backdrop-blur-md border border-purple-500/10 p-1 w-full justify-start h-auto flex-wrap">
+                    <TabsTrigger value="overview" className="data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-400 rounded-md">Overview</TabsTrigger>
+                    <TabsTrigger value="integration" className="data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-400 rounded-md">Integration Guide</TabsTrigger>
+                  </TabsList>
+                </motion.div>
 
-              <motion.div variants={itemVariants}>
-                <Card className="overflow-hidden border-purple-500/5">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Terminal className="h-4 w-4 text-purple-500" />
-                      API Specifications
-                    </CardTitle>
-                    <CardDescription>Gateway and parameter details for integration</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</p>
-                        <p className="font-semibold">{listing.model_name}</p>
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gateway Endpoint</p>
-                        <div className="flex items-center gap-2">
-                          <code className="flex-1 text-xs bg-muted px-2 py-1 rounded border truncate">
-                            {gatewayUrl}
-                          </code>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCopyEndpoint}>
-                            {copiedEndpoint ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                          </Button>
+                <TabsContent value="overview" className="space-y-8 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
+                  <Card className="overflow-hidden border-purple-500/5">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                        About
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                        {listing.description || "No description provided."}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="overflow-hidden border-purple-500/5">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Terminal className="h-4 w-4 text-purple-500" />
+                        API Specifications
+                      </CardTitle>
+                      <CardDescription>Gateway and parameter details for integration</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</p>
+                          <p className="font-semibold">{listing.model_name}</p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gateway Endpoint</p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 text-xs bg-muted px-2 py-1 rounded border truncate">
+                              {gatewayUrl}
+                            </code>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCopyEndpoint}>
+                              {copiedEndpoint ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t">
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Max Input</p>
-                        <p className="font-semibold">{listing.max_input_chars.toLocaleString()} chars</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t">
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Max Input</p>
+                          <p className="font-semibold">{listing.max_input_chars.toLocaleString()} chars</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Max Output</p>
+                          <p className="font-semibold">{listing.max_completion_tokens.toLocaleString()} tokens</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Delegation ID</p>
+                          <p className="font-semibold font-mono text-sm truncate" title={listing.delegation_id || undefined}>
+                            {listing.delegation_id ? listing.delegation_id.slice(0, 8) + "..." : "--"}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Network</p>
+                          <p className="font-semibold">Base Sepolia</p>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Max Output</p>
-                        <p className="font-semibold">{listing.max_completion_tokens.toLocaleString()} tokens</p>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="integration" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
+                  <Card className="overflow-hidden border-purple-500/5">
+                    <CardHeader className="pb-3 border-b">
+                      <CardTitle className="text-lg">Quickstart Guide</CardTitle>
+                      <CardDescription>Integrate this AI model into your application</CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-6 space-y-8">
+                      
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-500/10 text-purple-500 font-semibold border border-purple-500/20">1</div>
+                          <h3 className="text-base font-semibold">Get Permission</h3>
+                        </div>
+                        <div className="ml-11 text-sm text-muted-foreground space-y-3">
+                          <p>Before you can call this endpoint, you must grant a payment permission via ERC-7715. This allows the gateway to deduct USDC for each successful call.</p>
+                          {!isConnected ? (
+                            <Button variant="outline" className="gap-2 border-purple-500/20 hover:bg-purple-500/10" onClick={() => connect()}>
+                              <Wallet className="h-4 w-4 text-purple-500" />
+                              Connect Wallet to Grant Permission
+                            </Button>
+                          ) : savedPermissionContext ? (
+                            <div className="flex items-center gap-2 text-green-500 font-medium text-sm py-2">
+                              <Check className="h-4 w-4" />
+                              Permission Granted
+                            </div>
+                          ) : isCheckingPermission ? (
+                            <Button variant="outline" disabled className="gap-2 border-purple-500/20">
+                              <Loader2 className="h-4 w-4 animate-spin text-purple-500" /> Checking Status...
+                            </Button>
+                          ) : (
+                            <div className="pt-2">
+                              <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Delegation ID</p>
-                        <p className="font-semibold font-mono text-sm truncate" title={listing.delegation_id || undefined}>
-                          {listing.delegation_id ? listing.delegation_id.slice(0, 8) + "..." : "--"}
-                        </p>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-500/10 text-purple-500 font-semibold border border-purple-500/20">2</div>
+                          <h3 className="text-base font-semibold">Install Client SDK</h3>
+                        </div>
+                        <div className="ml-11">
+                          <p className="text-sm text-muted-foreground mb-3">Install our lightweight HTTP client to handle the 402 payment flow automatically.</p>
+                          <div className="bg-muted rounded-md p-3 font-mono text-xs text-muted-foreground border">
+                            npm install @x402/client
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Network</p>
-                        <p className="font-semibold">Base Sepolia</p>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-500/10 text-purple-500 font-semibold border border-purple-500/20">3</div>
+                          <h3 className="text-base font-semibold">Call the API</h3>
+                        </div>
+                        <div className="ml-11">
+                          <p className="text-sm text-muted-foreground mb-3">Initialize the client with your session key and make a request to the gateway.</p>
+                          <div className="bg-muted rounded-md p-4 font-mono text-xs overflow-x-auto border">
+                            <pre>{`import { X402Client } from "@x402/client";
+
+// 1. Initialize client with the session key from step 1
+const client = new X402Client({
+  sessionKey: process.env.QUOTRA_SESSION_KEY
+});
+
+// 2. Make the request
+const response = await client.fetch("${gatewayUrl}", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    chat: "Explain quantum computing in simple terms.",
+    systemPrompt: "You are an expert physicist." // Optional
+  })
+});
+
+const data = await response.json();
+console.log(data.text);`}</pre>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
+
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             </div>
 
             <motion.div variants={itemVariants}>
@@ -252,19 +373,27 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
                     <div className="pt-2 space-y-3">
                       {!isConnected ? (
-                        <Button className="w-full h-11 gap-2" disabled>
+                        <Button className="w-full h-11 gap-2" onClick={() => connect()}>
                           <Wallet className="h-4 w-4" />
                           Connect Wallet to Use
                         </Button>
                       ) : !isActive ? (
                         <Button className="w-full h-11" disabled>Listing Inactive</Button>
                       ) : hasDelegation ? (
-                        <Button className="w-full h-11 gap-2" asChild>
-                          <Link href={"/playground/" + listing.id}>
-                            <Beaker className="h-4 w-4" />
-                            Try in Playground
-                          </Link>
-                        </Button>
+                        savedPermissionContext ? (
+                          <Button className="w-full h-11 gap-2" asChild>
+                            <Link href={"/playground/" + listing.id}>
+                              <Beaker className="h-4 w-4" />
+                              Try in Playground
+                            </Link>
+                          </Button>
+                        ) : isCheckingPermission ? (
+                          <Button className="w-full h-11 gap-2" disabled>
+                            <Loader2 className="h-4 w-4 animate-spin" /> Checking...
+                          </Button>
+                        ) : (
+                          <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
+                        )
                       ) : (
                         <Button className="w-full h-11" disabled>No delegation configured</Button>
                       )}
