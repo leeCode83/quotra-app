@@ -257,21 +257,17 @@ PER-CALL:
    - Max input chars per request (minimum: 100, maximum: 8,000, default: 2,000)
    - Max completion tokens per request (minimum: 50, maximum: 2,000, default: 500)
    - Expiry duration (options: 7 / 14 / 30 / 90 days)
-3. Frontend sends form data to `/api/provider/register`
-4. Server-side: encrypt Venice AI key using AES-256-GCM → store ciphertext + IV + auth_tag in Supabase
-5. Server-side: create delegation object via MetaMask Smart Accounts Kit:
-   - `delegator`: provider wallet address
-   - `delegatee`: Quotra server-side session account address
-   - `authority`: ROOT_AUTHORITY (0xff...ff)
-   - `caveats`: expiry timestamp only (call count enforced off-chain in Supabase)
-   - `salt`: random bytes
-6. Provider signs delegation via MetaMask wallet (EIP-712 typed data)
-7. 1Shot Relayer submits signed delegation on-chain — provider pays no ETH
-8. Server stores: `listingId`, `delegationId`, `signedDelegation` object, encrypted key → Supabase
+3. Frontend requests execution permissions via ERC-7715 (`wallet_requestExecutionPermissions` via MetaMask Smart Accounts Kit).
+   - Permission requested is `erc20-token-periodic` for USDC to allow the 1Shot Relayer to pull fees for gas abstraction.
+4. Provider approves the permission grant in MetaMask.
+5. Frontend receives `permissionsContext` and `delegationManager` from MetaMask.
+6. Frontend sends form data + permission objects to `/api/providers/listings`.
+7. Server-side: encrypt API key using AES-256-GCM → store ciphertext + IV + auth_tag in Supabase.
+8. Server stores: `listingId`, `delegationId` (context hash), `permissions_context`, `delegation_manager`, encrypted key → Supabase.
 9. Public endpoint auto-generated: `POST /api/v1/[delegationId]/chat`
 10. Listing appears in marketplace
 
-> **✅ Implementation status:** `useDelegation.ts` rewritten with `createProviderDelegation()` — delegation direction fixed to `from: providerSmartAccount → to: QUOTRA_SERVER_ACCOUNT` (uses `NEXT_PUBLIC_PAY_TO_ADDRESS`). Built on `@metamask/smart-accounts-kit` (not `delegation-toolkit`). Scope uses `NativeTokenTransferAmount` with `0n` max (equivalent to ROOT_AUTHORITY for smart-accounts-kit API). The delegation flow is not yet integrated with the registration API — integration is planned in Phase 3.
+> **✅ Implementation status:** `useDelegation.ts` implemented using native ERC-7715 `wallet_requestExecutionPermissions` (`erc7715ProviderActions`) instead of legacy `erc7715Actions`. Permission payload uses `erc20-token-periodic`. Database modified to drop `signed_delegation` constraint and use `permissions_context` and `delegation_manager`.
 
 ### 9.3 On-Chain vs Off-Chain Responsibility ✅
 
@@ -592,8 +588,10 @@ CREATE TABLE listings (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id           UUID REFERENCES providers(id) ON DELETE CASCADE,
   name                  TEXT NOT NULL,
-  delegation_id         TEXT NOT NULL UNIQUE,       -- ERC-7710 delegation hash/id
-  signed_delegation     JSONB NOT NULL,             -- full signed delegation object (for redemption)
+  delegation_id         TEXT NOT NULL UNIQUE,       -- ERC-7715 context hash
+  signed_delegation     JSONB,                      -- legacy, optional
+  permissions_context   JSONB NOT NULL,             -- ERC-7715 context object
+  delegation_manager    TEXT NOT NULL,              -- ERC-7715 manager address
   encrypted_key         TEXT NOT NULL,              -- AES-256-GCM ciphertext
   key_iv                TEXT NOT NULL,              -- AES IV (hex)
   key_auth_tag          TEXT NOT NULL,              -- AES auth tag (hex)
@@ -727,14 +725,16 @@ Content-Type: application/json
 Request:
 {
   "walletAddress": "0x...",
-  "veniceApiKey": "string",             // plaintext, AES-encrypted server-side immediately
-  "modelName": "llama-3.3-70b",
+  "apiKey": "string",                   // plaintext, AES-encrypted server-side immediately
+  "modelName": "gemini-2.0-flash",
   "pricePerCallUsdc": 0.001,            // min: 0.0001, max: 1.00
   "maxCalls": 500,                       // min: 10, max: 100000
   "maxInputChars": 2000,                // min: 100, max: 8000
   "maxCompletionTokens": 500,           // min: 50, max: 2000
   "expiryDays": 30,                     // allowed: 7, 14, 30, 90
-  "signedDelegation": { ... }           // ERC-7710 signed delegation object from MetaMask
+  "delegationId": "string",             // ERC-7715 context hash
+  "permissionsContext": { ... },        // ERC-7715 granted permissions object
+  "delegationManager": "0x..."          // ERC-7715 delegation manager
 }
 
 Response 201:

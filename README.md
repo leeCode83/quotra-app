@@ -53,7 +53,7 @@ No subscriptions. No fiat billing. No middlemen hoarding the profits.
 
 Quotra combines bleeding-edge Web3 standards to create a seamless Web2-like experience:
 
-1. **Provider Listing:** A provider inputs their Venice AI API key. The key is encrypted locally (AES-256-GCM) and safely stored in Supabase. The provider signs an **ERC-7710** delegation authorizing Quotra to act on their behalf.
+1. **Provider Listing:** A provider inputs their Premium AI API key (OpenAI/Anthropic/Gemini). The key is encrypted locally (AES-256-GCM) and safely stored in Supabase. The provider grants an **ERC-7715** advanced permission (`wallet_requestExecutionPermissions`) authorizing Quotra to act on their behalf.
 2. **Consumer Payment:** When a consumer makes a request, they are prompted via **ERC-7715** for session auth. The HTTP request includes an **x402** payment header.
 3. **The Proxy (Gateway):** Quotra's backend intercepts the request, deducts the USDC payment into the treasury escrow, decrypts the provider's API key in-memory, and forwards the exact prompt to the AI provider.
 4. **Settlement:** The AI response is streamed back to the consumer, and the provider can claim their accumulated USDC earnings directly to their smart account.
@@ -67,7 +67,6 @@ Once a consumer has been granted permission and obtained a JWT token, they can i
 **Endpoint:** `POST /api/v1/[delegationId]/chat`
 
 **Headers:**
-- `Authorization: Bearer <JWT_TOKEN>` (Proof of session authorization)
 - `X-PAYMENT: <X402_PAYMENT_PROOF>` (Proof of USDC payment for the call)
 - `Content-Type: application/json`
 
@@ -96,7 +95,7 @@ Once a consumer has been granted permission and obtained a JWT token, they can i
 - **Smart Accounts & Gasless:** MetaMask Smart Accounts Kit, Pimlico Bundler
 - **Web3 Standards:** x402 (HTTP Micropayments), ERC-7710 (Delegation), ERC-7715 (Permissions)
 - **Database & Auth:** Supabase (PostgreSQL, RLS)
-- **AI Backend:** Venice AI (Privacy-first LLM inference)
+- **AI Backend:** OpenAI, Anthropic, Gemini (Premium LLM inference)
 
 ---
 
