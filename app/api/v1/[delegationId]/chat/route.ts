@@ -82,6 +82,9 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     }
     const delegationId = match[1];
 
+    // Ekstrak wallet address consumer dari header (opsional — digunakan untuk mencatat consumer_id di transaksi)
+    const consumerAddress = request.headers.get("x-wallet-address") ?? undefined;
+
     const supabase = await createClient();
 
     // Validate listing (status, expiry, remaining calls)
@@ -138,6 +141,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
       listing.id,
       listing.price_per_call_usdc,
       aiResponse.usage as unknown as Record<string, unknown>,
+      consumerAddress,
     );
 
     await accumulateProviderEarnings(supabase, listing.provider_id, listing.price_per_call_usdc);

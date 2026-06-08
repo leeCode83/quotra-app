@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertCircle, Wallet, Clock, ArrowUpRight, Beaker
+  AlertCircle, Wallet, Clock, ArrowUpRight, Beaker, Shield, XCircle, CheckCircle2
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,26 @@ import { createClient } from "@/lib/supabase-client";
 import { TransactionHistory, Transaction as TxProp } from "@/components/TransactionHistory";
 import type { Transaction, Listing } from "@/types";
 
+/** Shape untuk satu permission dari /api/consumer/permissions */
+interface ConsumerPermission {
+  id: string;
+  listing_id: string;
+  status: "active" | "revoked" | "expired";
+  expires_at: string;
+  created_at: string;
+  listings: {
+    id: string;
+    name: string;
+    model_name: string;
+    price_per_call_usdc: string;
+    remaining_calls: number;
+    max_calls: number;
+  } | null;
+}
+
 export default function ConsumerDashboardPage() {
   const { session, isWrongChain, disconnect } = useWallet();
+  const queryClient = useQueryClient();
 
   const [txPage, setTxPage] = useState(1);
   const txPerPage = 10;
@@ -53,9 +71,6 @@ export default function ConsumerDashboardPage() {
     enabled: !!consumer?.id,
   });
 
-  const transactions = txData?.data || [];
-  const txTotalCount = txData?.count || 0;
-
   const { data: listings = [] } = useQuery<Listing[]>({
     queryKey: ["consumer-listings"],
     queryFn: async () => {
@@ -65,6 +80,42 @@ export default function ConsumerDashboardPage() {
       return data;
     },
   });
+
+  /** Query: active permissions consumer dari endpoint baru */
+  const { data: permissionsData, isLoading: permissionsLoading } = useQuery<ConsumerPermission[]>({
+    queryKey: ["consumer-permissions", session.address],
+    queryFn: async () => {
+      if (!session.address) return [];
+      const res = await fetch("/api/consumer/permissions", {
+        headers: { "x-wallet-address": session.address },
+      });
+      if (!res.ok) throw new Error("Failed to fetch permissions");
+      const json = await res.json();
+      return json.permissions as ConsumerPermission[];
+    },
+    enabled: !!session.address,
+  });
+
+  /** Mutation: revoke permission */
+  const revokeMutation = useMutation({
+    mutationFn: async (permissionId: string) => {
+      const res = await fetch("/api/consumer/permissions", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-wallet-address": session.address ?? "",
+        },
+        body: JSON.stringify({ permissionId }),
+      });
+      if (!res.ok) throw new Error("Failed to revoke permission");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["consumer-permissions"] });
+    },
+  });
+
+  const transactions = txData?.data || [];
+  const txTotalCount = txData?.count || 0;
 
   if (!session.isConnected) {
     return (
@@ -131,7 +182,6 @@ export default function ConsumerDashboardPage() {
 
   const totalSpent = consumer ? parseFloat(consumer.total_spent_usdc || "0") : 0;
 
-  // Build unique listing IDs from transactions for the "used" count
   const usedListingIds = new Set(transactions.map((tx) => tx.listing_id));
 
   const formattedTransactions: TxProp[] = transactions.map((tx) => ({
@@ -144,6 +194,8 @@ export default function ConsumerDashboardPage() {
     completedAt: tx.completed_at,
     type: "expense" as const,
   }));
+
+  const activePermissions = permissionsData?.filter((p) => p.status === "active") ?? [];
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -183,12 +235,15 @@ export default function ConsumerDashboardPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Transactions</CardDescription>
-            <CardTitle className="text-2xl">{txTotalCount}</CardTitle>
+            <CardDescription>Active Permissions</CardDescription>
+            <CardTitle className="text-2xl flex items-center gap-1">
+              <Shield className="h-5 w-5 text-green-500" />
+              {activePermissions.length}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              Total payment records
+              ERC-7715 spending grants active
             </p>
           </CardContent>
         </Card>
@@ -197,6 +252,14 @@ export default function ConsumerDashboardPage() {
       <Tabs defaultValue="usage" className="space-y-4">
         <TabsList>
           <TabsTrigger value="usage">My Models</TabsTrigger>
+          <TabsTrigger value="permissions">
+            Active Permissions
+            {activePermissions.length > 0 && (
+              <Badge variant="secondary" className="ml-2 text-xs">
+                {activePermissions.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="transactions">Payment History</TabsTrigger>
         </TabsList>
 
@@ -250,6 +313,94 @@ export default function ConsumerDashboardPage() {
                             </Link>
                           </Button>
                         )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </TabsContent>
+
+        <TabsContent value="permissions" className="space-y-4">
+          {permissionsLoading ? (
+            <div className="animate-pulse space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-24 bg-muted rounded-xl" />
+              ))}
+            </div>
+          ) : activePermissions.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold">No Active Permissions</h3>
+                <p className="text-muted-foreground mt-1">
+                  You have not granted spending permissions to any AI listing yet.
+                </p>
+                <Button className="mt-4" asChild>
+                  <Link href="/marketplace">Browse Marketplace</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            activePermissions.map((permission) => {
+              const isExpired = new Date(permission.expires_at) < new Date();
+              const isRevoking = revokeMutation.isPending;
+
+              return (
+                <Card key={permission.id} className="border-green-500/10">
+                  <CardContent className="py-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold">
+                            {permission.listings?.name ?? "Unknown Listing"}
+                          </h3>
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {permission.listings?.model_name ?? "--"}
+                          </Badge>
+                          {isExpired ? (
+                            <Badge variant="secondary" className="text-xs gap-1">
+                              <XCircle className="h-3 w-3" /> Expired
+                            </Badge>
+                          ) : (
+                            <Badge variant="default" className="text-xs gap-1 bg-green-600">
+                              <CheckCircle2 className="h-3 w-3" /> Active
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3.5 w-3.5" />
+                            Expires {new Date(permission.expires_at).toLocaleDateString("id-ID", {
+                              day: "numeric", month: "short", year: "numeric"
+                            })}
+                          </span>
+                          {permission.listings && (
+                            <span>
+                              ${parseFloat(permission.listings.price_per_call_usdc).toFixed(4)} / call
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {permission.listings && (
+                          <Button size="sm" variant="outline" className="gap-1.5" asChild>
+                            <Link href={"/playground/" + permission.listing_id}>
+                              <Beaker className="h-4 w-4" /> Try
+                            </Link>
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="gap-1.5"
+                          disabled={isRevoking}
+                          onClick={() => revokeMutation.mutate(permission.id)}
+                        >
+                          <XCircle className="h-4 w-4" />
+                          Revoke
+                        </Button>
                       </div>
                     </div>
                   </CardContent>

@@ -20,22 +20,25 @@ export async function POST(req: Request) {
     }
 
     // Auto-create consumer if not exists
-    await supabase.from("consumers").upsert(
+    const { data: consumer, error: consumerError } = await supabase.from("consumers").upsert(
       { wallet_address: walletAddress.toLowerCase() },
       { onConflict: "wallet_address" }
-    );
+    ).select("id").single();
+
+    if (consumerError || !consumer) {
+      return NextResponse.json({ error: "Failed to create/fetch consumer" }, { status: 500 });
+    }
 
     // Save permission
-    const { error } = await supabase.from("consumer_permissions").upsert(
+    const { error } = await supabase.from("consumer_permissions").insert(
       {
-        consumer_address: walletAddress.toLowerCase(),
+        consumer_id: consumer.id,
         listing_id,
         status: "active",
         expires_at,
         erc7715_proof: JSON.stringify(permission_context),
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: "consumer_address,listing_id" }
+        granted_at: new Date().toISOString(),
+      }
     );
 
     if (error) {
@@ -60,10 +63,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing listing_id or wallet_address" }, { status: 400 });
     }
 
+    const { data: consumer } = await supabase.from("consumers").select("id").eq("wallet_address", walletAddress.toLowerCase()).single();
+    if (!consumer) {
+      return NextResponse.json({ hasPermission: false });
+    }
+
     const { data, error } = await supabase
       .from("consumer_permissions")
       .select("*")
-      .eq("consumer_address", walletAddress.toLowerCase())
+      .eq("consumer_id", consumer.id)
       .eq("listing_id", listingId)
       .eq("status", "active")
       .gt("expires_at", new Date().toISOString())

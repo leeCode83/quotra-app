@@ -67,24 +67,22 @@ export function validateRequestLimits(
   }
 }
 
+/**
+ * Atomic quota decrement via Supabase RPC.
+ * Fungsi `decrement_remaining_calls` menggunakan single UPDATE ... WHERE remaining_calls > 0
+ * sehingga tidak ada race condition saat banyak request concurrent.
+ */
 export async function reserveQuotaSlot(supabase: SupabaseClient, listingId: string) {
-  const { data: listing } = await supabase
-    .from("listings")
-    .select("remaining_calls")
-    .eq("id", listingId)
-    .single();
-
-  if (!listing || listing.remaining_calls <= 0) {
-    throw new GatewayError("No calls remaining", 410, "NO_CALLS_REMAINING");
-  }
-
-  const { error } = await supabase
-    .from("listings")
-    .update({ remaining_calls: listing.remaining_calls - 1 })
-    .eq("id", listingId);
+  const { data, error } = await supabase
+    .rpc("decrement_remaining_calls", { p_id: listingId });
 
   if (error) {
     throw new GatewayError("Failed to reserve quota", 500, "INTERNAL_ERROR");
+  }
+
+  // RPC returns -1 jika remaining_calls sudah 0 sebelum decrement
+  if (data === -1) {
+    throw new GatewayError("No calls remaining", 410, "NO_CALLS_REMAINING");
   }
 }
 
@@ -103,18 +101,37 @@ export async function rollbackQuotaSlot(supabase: SupabaseClient, listingId: str
   }
 }
 
+/**
+ * Catat transaksi sukses ke tabel `transactions`.
+ * consumerAddress digunakan untuk meng-upsert consumer dan menyimpan consumer_id
+ * agar Consumer Dashboard bisa menampilkan histori per user.
+ */
 export async function recordSuccessTransaction(
   supabase: SupabaseClient,
   listingId: string,
   pricePerCallUsdc: number,
   usage: Record<string, unknown>,
+  consumerAddress?: string,
 ) {
   const amountUsdc = pricePerCallUsdc.toFixed(6);
   const providerAmount = (pricePerCallUsdc * 0.9).toFixed(6);
   const platformAmount = (pricePerCallUsdc * 0.1).toFixed(6);
 
+  // Resolve consumer_id dari wallet address jika tersedia
+  let consumerId: string | null = null;
+  if (consumerAddress) {
+    const normalized = consumerAddress.toLowerCase();
+    const { data: consumer } = await supabase
+      .from("consumers")
+      .upsert({ wallet_address: normalized }, { onConflict: "wallet_address" })
+      .select("id")
+      .single();
+    consumerId = consumer?.id ?? null;
+  }
+
   await supabase.from("transactions").insert({
     listing_id: listingId,
+    consumer_id: consumerId,
     amount_usdc: amountUsdc,
     provider_amount_usdc: providerAmount,
     platform_amount_usdc: platformAmount,

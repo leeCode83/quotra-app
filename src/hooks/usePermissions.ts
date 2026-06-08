@@ -35,6 +35,17 @@ export function usePermissions() {
     setSessionAccount(privateKeyToAccount(pk));
   }, []);
 
+  /**
+   * Hapus ephemeral session key dari localStorage.
+   * Panggil saat consumer merevoke semua permissions agar
+   * session account lama tidak bisa digunakan kembali.
+   */
+  const clearSessionKey = useCallback(() => {
+    localStorage.removeItem("quotra_session_pk");
+    setSessionAccount(null);
+    setGrantedPermissions(null);
+  }, []);
+
   const requestPermission = useCallback(async () => {
     if (!isConnected || !address) {
       setError("Wallet not connected");
@@ -101,6 +112,7 @@ export function usePermissions() {
     error,
     requestPermission,
     getPermissionContext,
-    setGrantedPermissions
+    setGrantedPermissions,
+    clearSessionKey,
   };
 }

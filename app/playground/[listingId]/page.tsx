@@ -3,12 +3,13 @@
 import { use, useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { ArrowLeft, Send, Loader2, Wallet, AlertCircle, Cpu } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Wallet, AlertCircle, Cpu, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 import { createClient } from "@/lib/supabase-client";
 import type { ListingWithProvider } from "@/types";
@@ -29,6 +30,8 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -95,8 +98,15 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
     try {
       const result = await fetchWithPayment(chatEndpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat: text }),
+        headers: {
+          "Content-Type": "application/json",
+          // Sertakan wallet address agar gateway bisa mencatat consumer_id di transaksi
+          ...(address ? { "x-wallet-address": address } : {}),
+        },
+        body: JSON.stringify({
+          chat: text,
+          ...(systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
+        }),
       });
 
       if (result.ok) {
@@ -185,6 +195,35 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
                 <p className="text-xs text-muted-foreground mb-4">
                   Pay-per-call AI endpoint. Each message costs the listed price.
                 </p>
+
+                {/* Collapsible System Prompt */}
+                <div className="border rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowSystemPrompt((v) => !v)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-left hover:bg-muted/50 transition-colors"
+                  >
+                    <span>System Prompt</span>
+                    {showSystemPrompt
+                      ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </button>
+                  {showSystemPrompt && (
+                    <div className="px-3 pb-3">
+                      <Textarea
+                        placeholder="You are a helpful assistant..."
+                        value={systemPrompt}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setSystemPrompt(e.target.value)}
+                        rows={4}
+                        className="text-xs mt-2 resize-none"
+                        maxLength={8000}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {systemPrompt.length}/8000 chars
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 {isConnected && !savedPermissionContext && !isCheckingPermission && (
                   <div className="pt-2 border-t">
