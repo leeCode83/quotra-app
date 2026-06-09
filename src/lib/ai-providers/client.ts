@@ -76,13 +76,14 @@ export async function callAIProvider(req: AICallRequest): Promise<AICallResponse
   try {
     // Dynamic provider factory: instantiated per-request with consumer's decrypted key
     let model;
+    const actualModelId = modelId.includes("/") ? modelId.split("/")[1] : modelId;
     if (provider === "openai") {
-      model = createOpenAI({ apiKey })(modelId);
+      model = createOpenAI({ apiKey })(actualModelId);
     } else if (provider === "anthropic") {
-      model = createAnthropic({ apiKey })(modelId);
+      model = createAnthropic({ apiKey })(actualModelId);
     } else {
       // provider === "google"
-      model = createGoogleGenerativeAI({ apiKey })(modelId);
+      model = createGoogleGenerativeAI({ apiKey })(actualModelId);
     }
 
     const result = await generateText({

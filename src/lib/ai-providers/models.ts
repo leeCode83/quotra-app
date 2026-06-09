@@ -40,17 +40,29 @@ export function getModelInfo(modelId: string): SupportedModel | undefined {
 }
 
 /**
- * Returns true if the given model ID is in the supported list.
+ * Returns true if the given model ID has no spaces, allowing custom models.
  */
 export function isValidModel(modelId: string): boolean {
-  return SUPPORTED_MODELS.some((m) => m.id === modelId);
+  return /^\S+$/.test(modelId);
 }
 
 /**
  * Returns the AI provider for a given model ID, or undefined if not found.
  */
 export function getProviderForModel(modelId: string): AIProvider | undefined {
-  return getModelInfo(modelId)?.provider;
+  if (modelId.startsWith("openai/")) return "openai";
+  if (modelId.startsWith("anthropic/")) return "anthropic";
+  if (modelId.startsWith("google/")) return "google";
+
+  const exactMatch = getModelInfo(modelId)?.provider;
+  if (exactMatch) return exactMatch;
+
+  const lower = modelId.toLowerCase();
+  if (lower.startsWith("gpt-") || lower.startsWith("o1") || lower.startsWith("o3")) return "openai";
+  if (lower.startsWith("claude-")) return "anthropic";
+  if (lower.startsWith("gemini-") || lower.startsWith("learnlm-")) return "google";
+  
+  return undefined;
 }
 
 /**

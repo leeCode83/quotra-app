@@ -37,8 +37,7 @@ export async function GET(request: NextRequest) {
         remaining_calls, 
         max_calls, 
         expires_at, 
-        status, 
-        delegation_id
+        status 
       `)
       .eq("provider_id", provider.id)
       .order("created_at", { ascending: false });
@@ -114,7 +113,6 @@ export async function GET(request: NextRequest) {
         maxCalls: l.max_calls,
         expiresAt: l.expires_at,
         status: l.status,
-        delegationId: l.delegation_id,
       })),
       transactions,
       claims,

@@ -1,6 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { listingSchema } from "@/lib/validators";
 
 
 export async function GET() {
@@ -48,75 +47,3 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
-
-    const supabase = await createClient();
-    const { data: provider, error: providerError } = await supabase
-      .from("providers")
-      .select("id")
-      .ilike("wallet_address", walletAddress)
-      .single();
-
-    if (providerError || !provider) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const parseResult = listingSchema.safeParse(body);
-    if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parseResult.error.format() },
-        { status: 400 }
-      );
-    }
-
-    if (parseResult.data.provider_id !== provider.id) {
-      return NextResponse.json({ error: "Forbidden: provider ID mismatch" }, { status: 403 });
-    }
-
-    const data = parseResult.data;
-
-    const { data: listing, error } = await supabase
-      .from("listings")
-      .insert({
-        provider_id: provider.id,
-        name: data.name,
-        model_name: data.model_name,
-        price_per_call_usdc: data.price_per_call_usdc,
-        max_calls: data.max_calls,
-        remaining_calls: data.max_calls,
-        max_input_chars: data.max_input_chars,
-        max_completion_tokens: data.max_completion_tokens,
-        expires_at: data.expires_at,
-        delegation_id: data.delegation_id,
-        permissions_context: data.permissions_context,
-        delegation_manager: data.delegation_manager,
-        encrypted_key: data.encrypted_key,
-        key_iv: data.key_iv,
-        key_auth_tag: data.key_auth_tag,
-        status: "active",
-      })
-      .select()
-      .single();
-
-    if (error || !listing) {
-      console.error("[listings] Insert error:", error);
-      return NextResponse.json(
-        { error: "Failed to create listing", details: error?.message },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ success: true, listing }, { status: 201 });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
-      { status: 500 }
-    );
-  }
-}

@@ -82,7 +82,6 @@ export async function POST(request: NextRequest) {
         max_input_chars: data.maxInputChars,
         max_completion_tokens: data.maxCompletionTokens,
         expires_at: expiresAt,
-        delegation_id: data.delegationId,
         permissions_context: data.permissionsContext,
         delegation_manager: data.delegationManager,
         encrypted_key: encrypted_key,

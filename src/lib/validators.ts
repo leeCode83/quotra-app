@@ -43,7 +43,7 @@ export const createListingSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters long.").optional(),
   /** API key for the selected AI provider (OpenAI / Anthropic / Google Gemini) */
   apiKey: z.string().min(10, "AI provider API key is required"),
-  modelName: z.string().min(1).refine(isValidModel, "Unsupported model. Must be one of OpenAI, Anthropic, or Gemini models"),
+  modelName: z.string().min(1, "Model name is required").regex(/^\S+$/, "Model name cannot contain spaces."),
   pricePerCallUsdc: z.number().min(0.0001).max(1.00),
   maxCalls: z.number().int().min(10).max(100000),
   maxInputChars: z.number().int().min(100).max(8000).default(2000),
@@ -77,7 +77,7 @@ export type UpdateListing = z.infer<typeof updateListingSchema>;
 export const listingSchema = z.object({
   provider_id: z.string().regex(UUID_REGEX, "Invalid provider ID format."),
   name: z.string().min(3, "Name must be at least 3 characters long."),
-  model_name: z.string().min(1, "Model name is required.").refine(isValidModel, "Unsupported model"),
+  model_name: z.string().min(1, "Model name is required.").regex(/^\S+$/, "Model name cannot contain spaces."),
   price_per_call_usdc: z.number().min(0.0001).max(1.00),
   max_calls: z.number().int().min(10).max(100000),
   max_input_chars: z.number().int().min(100).max(8000).default(2000),

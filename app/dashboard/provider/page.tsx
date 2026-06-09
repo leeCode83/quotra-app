@@ -45,6 +45,7 @@ const DEFAULT_MODEL_MAP: Record<string, string> = {
 const emptyListingForm = {
   name: "",
   provider: "",
+  modelName: "",
   pricePerCallUsdc: "0.001",
   maxCalls: 100,
   maxInputChars: 2000,
@@ -113,7 +114,7 @@ export default function ProviderDashboardPage() {
         walletAddress: session.address,
         name: form.name,
         apiKey: form.apiKey,
-        modelName: DEFAULT_MODEL_MAP[form.provider],
+        modelName: form.provider + "/" + form.modelName,
         pricePerCallUsdc: Number(form.pricePerCallUsdc),
         maxCalls: form.maxCalls,
         maxInputChars: form.maxInputChars,
@@ -153,13 +154,11 @@ export default function ProviderDashboardPage() {
   const handleRevoke = async (listingId: string) => {
     setRevokingId(listingId);
     try {
-      const res = await fetch(`/api/providers/listings/${listingId}`, {
-        method: "PATCH",
+      const res = await fetch(`/api/listings/${listingId}`, {
+        method: "DELETE",
         headers: { 
           "x-wallet-address": session.address,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ status: "revoked" })
+        }
       });
       if (!res.ok) {
         const err = await res.json();
@@ -203,7 +202,7 @@ export default function ProviderDashboardPage() {
         </div>
         <div className="grid gap-2">
           <Label htmlFor="provider">Provider</Label>
-          <Select value={form.provider} onValueChange={(v) => setForm({ ...form, provider: v })}>
+          <Select value={form.provider} onValueChange={(v) => setForm({ ...form, provider: v, modelName: DEFAULT_MODEL_MAP[v] || form.modelName })}>
             <SelectTrigger id="provider">
               <SelectValue placeholder="Select a provider" />
             </SelectTrigger>
@@ -216,6 +215,10 @@ export default function ProviderDashboardPage() {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="modelName">Model Name</Label>
+          <Input id="modelName" value={form.modelName} onChange={(e) => setForm({ ...form, modelName: e.target.value.replace(/\s+/g, '') })} placeholder="e.g. gpt-4o-mini" />
+        </div>
         <div className="grid gap-2">
           <Label htmlFor="price">Price per Call (USDC)</Label>
           <Input 
