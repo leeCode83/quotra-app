@@ -50,8 +50,8 @@ CREATE TABLE listings (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id           UUID REFERENCES providers(id) ON DELETE CASCADE,
   name                  TEXT NOT NULL,
-  delegation_id         TEXT NOT NULL UNIQUE,
-  signed_delegation     JSONB NOT NULL,
+  permissions_context   JSONB,
+  delegation_manager    TEXT,
   encrypted_key         TEXT NOT NULL,
   key_iv                TEXT NOT NULL,
   key_auth_tag          TEXT NOT NULL,
@@ -68,8 +68,8 @@ CREATE TABLE listings (
 );
 
 COMMENT ON TABLE listings IS 'Available AI API listings';
-COMMENT ON COLUMN listings.delegation_id IS 'ERC-7710 delegation hash/id';
-COMMENT ON COLUMN listings.signed_delegation IS 'Full signed ERC-7710 delegation object';
+COMMENT ON COLUMN listings.permissions_context IS 'ERC-7715 context object';
+COMMENT ON COLUMN listings.delegation_manager IS 'ERC-7715 manager address';
 COMMENT ON COLUMN listings.encrypted_key IS 'AES-256-GCM ciphertext (hex)';
 COMMENT ON COLUMN listings.key_iv IS 'AES initialization vector (hex, 12 bytes)';
 COMMENT ON COLUMN listings.key_auth_tag IS 'AES authentication tag (hex, 16 bytes)';

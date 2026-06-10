@@ -438,6 +438,13 @@ Step 6b: AI Provider FAILURE
 - Hard limit: total combined character count of all `content` fields ≤ `listing.max_input_chars`
 - This prevents abuse: sending 50-message history counts against max_input_chars
 
+### 9.11 Playground (Free Trial) ✅
+- Independent free trial interface allowing consumers to test a listing's model directly in the browser without payment.
+- **Quota Limit**: Maximum of 3 free calls per wallet per listing.
+- **No Permissions**: Does not require ERC-7715 permission or x402 payment.
+- **Streaming UI**: Uses Vercel AI SDK to stream text generation incrementally to the UI for immediate feedback.
+- **Markdown Rendering**: Render responses as compiled GitHub Flavored Markdown (tables, lists, formatting).
+
 ---
 
 ## 10. Non-Functional Requirements
@@ -588,10 +595,8 @@ CREATE TABLE listings (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id           UUID REFERENCES providers(id) ON DELETE CASCADE,
   name                  TEXT NOT NULL,
-  delegation_id         TEXT NOT NULL UNIQUE,       -- ERC-7715 context hash
-  signed_delegation     JSONB,                      -- legacy, optional
-  permissions_context   JSONB NOT NULL,             -- ERC-7715 context object
-  delegation_manager    TEXT NOT NULL,              -- ERC-7715 manager address
+  permissions_context   JSONB,                      -- ERC-7715 context object
+  delegation_manager    TEXT,                       -- ERC-7715 manager address
   encrypted_key         TEXT NOT NULL,              -- AES-256-GCM ciphertext
   key_iv                TEXT NOT NULL,              -- AES IV (hex)
   key_auth_tag          TEXT NOT NULL,              -- AES auth tag (hex)
@@ -631,6 +636,19 @@ CREATE TABLE consumer_permissions (
 );
 ```
 
+### Table: `playground_trials`
+```sql
+CREATE TABLE playground_trials (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_address  TEXT NOT NULL,
+  listing_id      UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  calls_count     INTEGER NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(wallet_address, listing_id)
+);
+```
+
 ### Table: `transactions`
 ```sql
 CREATE TABLE transactions (
@@ -658,6 +676,19 @@ CREATE TABLE claim_history (
   tx_hash         TEXT,                   -- on-chain USDC transfer tx hash
   status          TEXT NOT NULL DEFAULT 'pending', -- pending | completed | failed
   created_at      TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Table: `playground_trials`
+```sql
+CREATE TABLE playground_trials (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_address  TEXT NOT NULL,
+  listing_id      UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  calls_count     INTEGER NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(wallet_address, listing_id)
 );
 ```
 
@@ -693,6 +724,7 @@ CREATE INDEX idx_transactions_consumer_id ON transactions(consumer_id);
 CREATE INDEX idx_transactions_status ON transactions(status);
 CREATE INDEX idx_claim_history_provider_id ON claim_history(provider_id);
 CREATE INDEX idx_claim_history_status ON claim_history(status);
+CREATE INDEX idx_playground_trials_wallet_listing ON playground_trials(wallet_address, listing_id);
 ```
 
 ### Critical SQL: Atomic Quota Reservation
@@ -979,6 +1011,31 @@ Response 200:
 Errors:
   400: { "error": "Validation failed" }
   403: { "error": "Forbidden: not listing owner" }
+  404: { "error": "Listing not found" }
+```
+
+### 14.9 Playground Chat (Free Trial) ✅
+```
+POST /api/playground/chat
+Content-Type: application/json
+
+Request Body:
+{
+  "messages": [{ "role": "user", "content": "string" }],
+  "listingId": "string",
+  "walletAddress": "0x..."
+}
+
+Validation:
+  - Check trial usage (max 3 calls per wallet per listing)
+  - Verify listing exists and is active
+
+Response 200:
+  Streamed text response chunks (text/plain or Vercel AI SDK stream format).
+
+Errors:
+  400: { "error": "Missing required fields" }
+  403: { "error": "Trial limit reached for this listing" }
   404: { "error": "Listing not found" }
 ```
 
@@ -1368,6 +1425,7 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 | `/` | Landing page — hero, tagline, CTA | No |
 | `/marketplace` | Browse all active listings | No (connect to use) |
 | `/marketplace/[delegationId]` | Listing detail + permission request | Yes (consumer) |
+| `/playground/[listingId]` | Free trial chat UI with streaming Markdown | Yes (consumer) |
 | `/dashboard` | Provider earnings + listings management | Yes (provider) |
 | `/dashboard/new` | Create new listing form | Yes (provider) |
 | `/docs` | API usage docs, request/response examples | No |
@@ -1411,7 +1469,7 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 | Automated batch settlement cron | Manual claim sufficient for hackathon |
 | Mainnet deployment | Risk mitigation — testnet only for hackathon |
 | Non-premium AI providers | Kept out of scope to focus on premium models |
-| Streaming responses (SSE) | Complex interaction with x402 per-call model |
+| Streaming responses (SSE) for paid gateway | Supported in Playground, but complex interaction with x402 per-call model for main gateway |
 | Pre-funded consumer deposit | Pure per-call simpler for MVP |
 | Mobile app | Time constraint |
 | Advanced provider analytics | Basic earnings view sufficient |
