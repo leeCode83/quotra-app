@@ -85,8 +85,27 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     }
     const listingId = match[1];
 
-    // Ekstrak wallet address consumer dari header (required — untuk permission check + transaksi)
-    const consumerAddress = request.headers.get("x-wallet-address") ?? undefined;
+    // Ekstrak verified consumer address dari PAYMENT-SIGNATURE header
+    // Header ini base64-encoded JSON yang sudah diverifikasi oleh x402 facilitator.
+    // Untuk ERC-7710 delegation, payload.delegator = alamat Smart Account consumer (verified).
+    // Fallback ke x-wallet-address untuk non-ERC-7710 payments.
+    let consumerAddress: string | undefined;
+    const paymentHeader = request.headers.get("PAYMENT-SIGNATURE");
+    if (paymentHeader) {
+      try {
+        const decoded = Buffer.from(paymentHeader, "base64").toString("utf-8");
+        const paymentPayload = JSON.parse(decoded);
+        const delegator = paymentPayload?.payload?.delegator as string | undefined;
+        if (delegator) {
+          consumerAddress = delegator.toLowerCase();
+        }
+      } catch {
+        console.warn("[Gateway] Failed to decode PAYMENT-SIGNATURE, falling back to x-wallet-address");
+      }
+    }
+    if (!consumerAddress) {
+      consumerAddress = request.headers.get("x-wallet-address")?.toLowerCase();
+    }
 
     const supabase = await createClient();
 
