@@ -85,10 +85,44 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     }
     const listingId = match[1];
 
-    // Ekstrak wallet address consumer dari header (opsional — digunakan untuk mencatat consumer_id di transaksi)
+    // Ekstrak wallet address consumer dari header (required — untuk permission check + transaksi)
     const consumerAddress = request.headers.get("x-wallet-address") ?? undefined;
 
     const supabase = await createClient();
+
+    // Verify consumer has active permission for this listing
+    if (!consumerAddress) {
+      return NextResponse.json(
+        { error: "Missing x-wallet-address header. Grant ERC-7715 session permission first.", code: "PERMISSION_REQUIRED" },
+        { status: 403 },
+      );
+    }
+    const normalized = consumerAddress.toLowerCase();
+    const { data: consumer } = await supabase
+      .from("consumers")
+      .select("id")
+      .eq("wallet_address", normalized)
+      .single();
+    if (!consumer) {
+      return NextResponse.json(
+        { error: "No active permission for this listing. Grant ERC-7715 session permission first.", code: "PERMISSION_REQUIRED" },
+        { status: 403 },
+      );
+    }
+    const { data: permission } = await supabase
+      .from("consumer_permissions")
+      .select("id")
+      .eq("consumer_id", consumer.id)
+      .eq("listing_id", listingId)
+      .eq("status", "active")
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+    if (!permission) {
+      return NextResponse.json(
+        { error: "No active permission for this listing. Grant ERC-7715 session permission first.", code: "PERMISSION_REQUIRED" },
+        { status: 403 },
+      );
+    }
 
     // Validate listing (status, expiry, remaining calls)
     const listing = await getActiveListing(supabase, listingId);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { GET, POST } from '../../../app/api/permissions/route';
+import { POST } from '../../../app/api/permissions/route';
 
 const { mockSupabase } = vi.hoisted(() => {
   return {
@@ -27,51 +27,25 @@ describe('Permissions API Route', () => {
     vi.clearAllMocks();
   });
 
-  describe('GET /api/permissions', () => {
-    it('returns 400 if params are missing', async () => {
-      const req = new NextRequest('http://localhost:3000/api/permissions');
-      const res = await GET(req);
+  describe('POST /api/permissions — save permission', () => {
+    it('returns 401 if x-wallet-address header is missing', async () => {
+      const req = new NextRequest('http://localhost:3000/api/permissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      
+      const res = await POST(req);
       const data = await res.json();
       
-      expect(res.status).toBe(400);
-      expect(data.error).toBe('Missing listing_id or wallet_address');
+      expect(res.status).toBe(401);
+      expect(data.error).toBe('Unauthorized');
     });
 
-    it('returns hasPermission: true if active permission exists', async () => {
-      const req = new NextRequest('http://localhost:3000/api/permissions?listing_id=123&wallet_address=0xABC');
-      
-      const mockPermission = {
-        id: 'perm1',
-        erc7715_proof: '{"some":"context"}',
-        consumer_address: '0xabc'
-      };
-
-      mockSupabase.single.mockResolvedValue({ data: mockPermission, error: null });
-
-      const res = await GET(req);
-      const data = await res.json();
-      
-      expect(data.hasPermission).toBe(true);
-      expect(data.permissionContext).toEqual({ some: 'context' });
-    });
-
-    it('returns hasPermission: false if permission is expired or missing', async () => {
-      const req = new NextRequest('http://localhost:3000/api/permissions?listing_id=123&wallet_address=0xABC');
-      
-      mockSupabase.single.mockResolvedValue({ data: null, error: { code: 'PGRST116' } });
-
-      const res = await GET(req);
-      const data = await res.json();
-      
-      expect(data.hasPermission).toBe(false);
-    });
-  });
-
-  describe('POST /api/permissions', () => {
     it('returns 400 if validation fails', async () => {
       const req = new NextRequest('http://localhost:3000/api/permissions', {
         method: 'POST',
-        headers: { 'x-wallet-address': '0xabc' },
+        headers: { 'x-wallet-address': '0xabc', 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
       

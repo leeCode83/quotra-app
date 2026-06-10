@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useEffect } from "react";
 import { useAccount } from "wagmi";
-import { parseUnits, custom, createWalletClient, type EIP1193Provider } from "viem";
+import { custom, createWalletClient, type EIP1193Provider } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { erc7715ProviderActions } from "@metamask/smart-accounts-kit/actions";
@@ -13,8 +13,6 @@ declare global {
     ethereum?: EIP1193Provider;
   }
 }
-
-const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e") as `0x${string}`;
 
 export function usePermissions() {
   const { address, isConnected } = useAccount();
@@ -46,20 +44,27 @@ export function usePermissions() {
     setGrantedPermissions(null);
   }, []);
 
-  const requestPermission = useCallback(async () => {
+  const requestPermission = useCallback(async (): Promise<{
+    permissions?: RequestExecutionPermissionsReturnType;
+    sessionAccount?: ReturnType<typeof privateKeyToAccount> | null;
+    error?: string;
+  }> => {
     if (!isConnected || !address) {
-      setError("Wallet not connected");
-      return;
+      const msg = "Wallet not connected";
+      setError(msg);
+      return { error: msg };
     }
 
     if (!window.ethereum) {
-      setError("MetaMask not found");
-      return;
+      const msg = "MetaMask not found";
+      setError(msg);
+      return { error: msg };
     }
 
     if (!sessionAccount) {
-      setError("Session account not initialized");
-      return;
+      const msg = "Session account not initialized";
+      setError(msg);
+      return { error: msg };
     }
 
     setIsLoading(true);
@@ -70,31 +75,61 @@ export function usePermissions() {
         transport: custom(window.ethereum as unknown as EIP1193Provider),
       }).extend(erc7715ProviderActions());
 
-      const currentTime = Math.floor(Date.now() / 1000);
-      const expiry = currentTime + 60 * 60 * 24 * 7; // 7 days
+      // 1. Check supported permission types for this chain
+      const supported: Record<string, { chainIds: number[]; ruleTypes: string[] }> =
+        await client.getSupportedExecutionPermissions();
+      const nativeAllowanceInfo = supported["native-token-allowance"];
+      const supportsNativeAllowance = nativeAllowanceInfo?.chainIds.includes(baseSepolia.id);
+
+      if (!supportsNativeAllowance) {
+        const msg = "native-token-allowance not supported on this chain. Supported types: " +
+          Object.keys(supported).join(", ");
+        setError(msg);
+        return { error: msg };
+      }
+
+      // 2. Request permission
+      const now = Math.floor(Date.now() / 1000);
+      const expiry = now + 60 * 60 * 24 * 7; // 7 days
 
       const permissions = await client.requestExecutionPermissions([{
         chainId: baseSepolia.id,
         expiry,
         to: sessionAccount.address,
+        from: address as `0x${string}`,
         permission: {
-          type: 'erc20-token-periodic',
+          type: 'native-token-allowance',
           data: {
-            tokenAddress: USDC_ADDRESS,
-            periodAmount: parseUnits('10', 6), // 10 USDC per week
-            periodDuration: 86400 * 7, // 1 week
-            startTime: currentTime,
-            justification: 'Permission for Quotra to pay AI API calls on your behalf',
+            allowanceAmount: 1n,
+            startTime: now,
+            justification: 'Quotra session authentication — no spending',
           },
           isAdjustmentAllowed: true,
         },
       }]);
 
+      if (!permissions || permissions.length === 0) {
+        const msg = "User rejected the permission request. Please approve the MetaMask popup to continue.";
+        setError(msg);
+        return { error: msg };
+      }
+
       setGrantedPermissions(permissions);
 
       return { permissions, sessionAccount };
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to request permissions");
+      const raw = err instanceof Error ? err.message : "Failed to request permissions";
+      let userMsg: string;
+      if (raw.includes("User rejected") || raw.includes("user rejected") || raw.includes("rejected")) {
+        userMsg = "Request rejected in MetaMask. Please approve the permission request.";
+      } else if (raw.includes("not supported") || raw.includes("unsupported")) {
+        userMsg = "Permission type not supported by your wallet. Check console for details.";
+      } else {
+        userMsg = raw;
+      }
+      setError(userMsg);
+      console.error("[usePermissions] requestPermission error:", err);
+      return { error: userMsg };
     } finally {
       setIsLoading(false);
     }

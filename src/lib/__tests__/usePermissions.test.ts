@@ -8,11 +8,14 @@ vi.mock('wagmi', () => ({
   useAccount: vi.fn(),
 }));
 
-const { mockRequestExecutionPermissions } = vi.hoisted(() => {
+const { mockRequestExecutionPermissions, mockGetSupportedPermissions } = vi.hoisted(() => {
   return {
     mockRequestExecutionPermissions: vi.fn().mockResolvedValue([
       { context: 'test-context', from: '0x123' }
-    ])
+    ]),
+    mockGetSupportedPermissions: vi.fn().mockResolvedValue({
+      "native-token-allowance": { chainIds: [84532], ruleTypes: [] },
+    }),
   };
 });
 
@@ -22,7 +25,8 @@ vi.mock('viem', async (importOriginal) => {
     ...actual,
     createWalletClient: vi.fn().mockReturnValue({
       extend: vi.fn().mockReturnValue({
-        requestExecutionPermissions: mockRequestExecutionPermissions
+        requestExecutionPermissions: mockRequestExecutionPermissions,
+        getSupportedExecutionPermissions: mockGetSupportedPermissions,
       })
     }),
     custom: vi.fn(),
@@ -75,7 +79,7 @@ describe('usePermissions', () => {
 
     await act(async () => {
       const res = await result.current.requestPermission();
-      expect(res).toBeUndefined();
+      expect(res?.error).toBe('Wallet not connected');
     });
 
     expect(result.current.error).toBe('Wallet not connected');
@@ -96,7 +100,7 @@ describe('usePermissions', () => {
 
     await act(async () => {
       const res = await result.current.requestPermission();
-      expect(res).toBeUndefined();
+      expect(res?.error).toBe('MetaMask not found');
     });
 
     expect(result.current.error).toBe('MetaMask not found');
@@ -113,7 +117,7 @@ describe('usePermissions', () => {
     await act(async () => {
       const res = await result.current.requestPermission();
       expect(res).toBeDefined();
-      expect(res!.permissions[0].context).toBe('test-context');
+      expect(res?.permissions?.[0]?.context).toBe('test-context');
     });
 
     expect(result.current.isLoading).toBe(false);

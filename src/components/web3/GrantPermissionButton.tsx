@@ -23,8 +23,12 @@ export function GrantPermissionButton({ listingId, onGranted }: GrantPermissionB
       
       const result = await requestPermission();
       
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
       if (!result?.permissions || result.permissions.length === 0) {
-        throw new Error("No permissions granted");
+        throw new Error("No permissions returned from wallet");
       }
 
       const permission = result.permissions[0];
@@ -39,7 +43,7 @@ export function GrantPermissionButton({ listingId, onGranted }: GrantPermissionB
         body: JSON.stringify({
           listing_id: listingId,
           permission_context: permission.context,
-          session_account_address: result.sessionAccount.address,
+          session_account_address: result.sessionAccount?.address || "",
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         }),
       });
@@ -85,7 +89,7 @@ export function GrantPermissionButton({ listingId, onGranted }: GrantPermissionB
         ) : (
           <>
             <Shield className="w-4 h-4" />
-            Grant Spending Permission
+            Grant Session Permission
           </>
         )}
       </button>
@@ -97,7 +101,7 @@ export function GrantPermissionButton({ listingId, onGranted }: GrantPermissionB
       )}
       
       <p className="text-xs text-gray-500 text-center">
-        Budget: 10 USDC/week for AI calls
+        Session-only auth. Payments handled via x402.
       </p>
     </div>
   );

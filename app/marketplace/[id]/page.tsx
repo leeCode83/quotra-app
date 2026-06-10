@@ -43,7 +43,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     if (!address || !id) return;
     setIsCheckingPermission(true);
     try {
-      const res = await fetch(`/api/permissions?listing_id=${id}&wallet_address=${address}`);
+      const res = await fetch(`/api/permissions/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_address: address }),
+      });
       const data = await res.json();
       if (data.hasPermission) {
         setSavedPermissionContext(data.permissionContext);
@@ -174,7 +178,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </motion.div>
 
-              <Tabs defaultValue="overview" className="space-y-6">
+              <Tabs defaultValue={savedPermissionContext ? "integration" : "overview"} className="space-y-6">
                 <motion.div variants={itemVariants}>
                   <TabsList className="bg-background/50 backdrop-blur-md border border-purple-500/10 p-1 w-full justify-start h-auto flex-wrap">
                     <TabsTrigger value="overview" className="data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-400 rounded-md">Overview</TabsTrigger>
@@ -261,7 +265,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                           <h3 className="text-base font-semibold">Get Permission</h3>
                         </div>
                         <div className="ml-11 text-sm text-muted-foreground space-y-3">
-                          <p>Before you can call this endpoint, you must grant a payment permission via ERC-7715. This allows the gateway to deduct USDC for each successful call.</p>
+                          <p>Before you can call this endpoint, you must grant a session permission via ERC-7715. This authorizes your session key to make requests. Payments are handled per-call via x402.</p>
                           {!isConnected ? (
                             <Button variant="outline" className="gap-2 border-purple-500/20 hover:bg-purple-500/10" onClick={() => connect()}>
                               <Wallet className="h-4 w-4 text-purple-500" />
@@ -292,7 +296,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         <div className="ml-11">
                           <p className="text-sm text-muted-foreground mb-3">Install our lightweight HTTP client to handle the 402 payment flow automatically.</p>
                           <div className="bg-muted rounded-md p-3 font-mono text-xs text-muted-foreground border">
-                            npm install @x402/client
+                            npm install @x402/fetch @x402/core
                           </div>
                         </div>
                       </div>
@@ -303,19 +307,33 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                           <h3 className="text-base font-semibold">Call the API</h3>
                         </div>
                         <div className="ml-11">
-                          <p className="text-sm text-muted-foreground mb-3">Initialize the client with your session key and make a request to the gateway.</p>
+                          <p className="text-sm text-muted-foreground mb-3">Use the x402 HTTP client with your wallet as the signer. It auto-handles the 402 payment flow.</p>
                           <div className="bg-muted rounded-md p-4 font-mono text-xs overflow-x-auto border">
-                            <pre>{`import { X402Client } from "@x402/client";
+                            <pre>{`import { x402Client } from "@x402/core/client";
+import { ExactEvmScheme } from "@x402/core";
+import { wrapFetchWithPayment } from "@x402/fetch";
+import { createWalletClient, custom } from "viem";
 
-// 1. Initialize client with the session key from step 1
-const client = new X402Client({
-  sessionKey: process.env.QUOTRA_SESSION_KEY
+// 1. Create x402 client with your EOA wallet as signer
+const walletClient = createWalletClient({
+  transport: custom(window.ethereum),
 });
+const x402 = new x402Client()
+  .register("eip155:*", new ExactEvmScheme({
+    signer: {
+      signMessage: (msg) => walletClient.signMessage({ message: msg }),
+    },
+  }));
 
-// 2. Make the request
-const response = await client.fetch("${gatewayUrl}", {
+const fetchWithPayment = wrapFetchWithPayment(fetch, x402);
+
+// 2. Call gateway — 402 payment is handled automatically
+const response = await fetchWithPayment("${gatewayUrl}", {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    "x-wallet-address": walletClient.account.address,
+  },
   body: JSON.stringify({
     chat: "Explain quantum computing in simple terms.",
     systemPrompt: "You are an expert physicist." // Optional
