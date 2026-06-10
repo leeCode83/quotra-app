@@ -7,7 +7,7 @@
  * listing's decrypted key (never stored in env).
  */
 
-import { generateText } from "ai";
+import { generateText, streamText } from "ai";
 import type { ModelMessage, LanguageModelUsage } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -123,6 +123,55 @@ export async function callAIProvider(req: AICallRequest): Promise<AICallResponse
     if (status === 401 || status === 403) code = "AI_KEY_INVALID";
     if (status === 429) code = "AI_RATE_LIMITED";
 
+    throw new AIProviderError(err.message || "AI provider error", status, code);
+  }
+}
+
+export async function streamAIProvider(req: AICallRequest) {
+  const { modelId, apiKey, chat, systemPrompt, maxOutputTokens } = req;
+
+  const provider = getProviderForModel(modelId);
+  if (!provider) {
+    throw new AIProviderError(`Unsupported model: ${modelId}`, 400, "UNSUPPORTED_MODEL");
+  }
+
+  const messages: ModelMessage[] = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+  messages.push({ role: "user", content: chat });
+
+  const maxTokens = maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+
+  try {
+    let model;
+    const actualModelId = modelId.includes("/") ? modelId.split("/")[1] : modelId;
+    if (provider === "openai") {
+      model = createOpenAI({ apiKey })(actualModelId);
+    } else if (provider === "anthropic") {
+      model = createAnthropic({ apiKey })(actualModelId);
+    } else {
+      model = createGoogleGenerativeAI({ apiKey })(actualModelId);
+    }
+
+    const result = streamText({
+      model,
+      messages,
+      maxOutputTokens: maxTokens,
+      abortSignal: AbortSignal.timeout(30_000),
+    });
+
+    return result;
+  } catch (error) {
+    if (error instanceof AIProviderError) throw error;
+    const err = error as Error & { status?: number; statusCode?: number };
+    if (err.name === "AbortError" || err.name === "TimeoutError") {
+      throw new AIProviderError("AI provider request timed out", 504, "AI_TIMEOUT");
+    }
+    const status = err.status ?? err.statusCode ?? 502;
+    let code = "AI_PROVIDER_ERROR";
+    if (status === 401 || status === 403) code = "AI_KEY_INVALID";
+    if (status === 429) code = "AI_RATE_LIMITED";
     throw new AIProviderError(err.message || "AI provider error", status, code);
   }
 }

@@ -10,13 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { createClient } from "@/lib/supabase-client";
 import type { ListingWithProvider } from "@/types";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
-import { usePermissions } from "@/hooks/usePermissions";
-import { useX402WithDelegation } from "@/hooks/useX402WithDelegation";
-import { GrantPermissionButton } from "@/components/web3/GrantPermissionButton";
 
 interface Message {
   role: "user" | "assistant";
@@ -36,34 +35,26 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [savedPermissionContext, setSavedPermissionContext] = useState<any>(null);
-  const [isCheckingPermission, setIsCheckingPermission] = useState(false);
+  const [trialInfo, setTrialInfo] = useState<{ remaining: number, limit: number, hasTrialRemaining: boolean } | null>(null);
 
-  const checkPermission = async () => {
+  const checkTrialUsage = async () => {
     if (!address || !listingId) return;
-    setIsCheckingPermission(true);
     try {
-      const res = await fetch(`/api/permissions?listing_id=${listingId}&wallet_address=${address}`);
-      const data = await res.json();
-      if (data.hasPermission) {
-        setSavedPermissionContext(data.permissionContext);
+      const trialRes = await fetch(`/api/playground/usage?listingId=${listingId}&walletAddress=${address}`);
+      if (trialRes.ok) {
+        const trialData = await trialRes.json();
+        setTrialInfo(trialData);
       }
     } catch (err) {
-      console.error("Failed to check permission", err);
-    } finally {
-      setIsCheckingPermission(false);
+      console.error("Failed to fetch trial usage", err);
     }
   };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    checkPermission();
+    checkTrialUsage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, listingId]);
-
-  const { sessionAccount } = usePermissions();
-  const { fetchWithPayment, isReady } = useX402WithDelegation(savedPermissionContext, sessionAccount);
 
   const { data: listing, isLoading: listingLoading } = useQuery<ListingWithProvider>({
     queryKey: ["listing", listingId],
@@ -83,12 +74,11 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const delegationId = listing?.delegation_id;
-  const chatEndpoint = delegationId ? `/api/v1/${delegationId}/chat` : null;
-
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || isLoading || !chatEndpoint || !fetchWithPayment) return;
+    if (!text || isLoading) return;
+
+    if (!trialInfo?.hasTrialRemaining) return;
 
     setInput("");
     setError(null);
@@ -96,23 +86,41 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
     setIsLoading(true);
 
     try {
-      const result = await fetchWithPayment(chatEndpoint, {
+      const payload = {
+        chat: text,
+        ...(systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
+      };
+
+      const result = await fetch(`/api/playground/chat?listingId=${listingId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Sertakan wallet address agar gateway bisa mencatat consumer_id di transaksi
           ...(address ? { "x-wallet-address": address } : {}),
         },
-        body: JSON.stringify({
-          chat: text,
-          ...(systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (result.ok) {
-        const data = await result.json();
-        const responseText = data.text || JSON.stringify(data);
-        setMessages((prev) => [...prev, { role: "assistant", content: responseText }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+        setIsLoading(false);
+
+        const reader = result.body?.getReader();
+        const decoder = new TextDecoder();
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1].content += chunk;
+              return newMessages;
+            });
+          }
+        }
+        
+        // Refresh trial info
+        checkTrialUsage();
       } else {
         let errorMsg = `Request failed with status ${result.status}`;
         try {
@@ -225,11 +233,6 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
                   )}
                 </div>
 
-                {isConnected && !savedPermissionContext && !isCheckingPermission && (
-                  <div className="pt-2 border-t">
-                    <GrantPermissionButton listingId={listingId} onGranted={checkPermission} />
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
@@ -258,19 +261,29 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
                         <Button className="mt-4" onClick={() => connect()}>
                           Connect Wallet to Start
                         </Button>
-                      ) : !savedPermissionContext && !isCheckingPermission ? (
+                      ) : !trialInfo?.hasTrialRemaining ? (
                         <div className="mt-4 p-4 border rounded-lg bg-muted/50 text-sm text-muted-foreground">
-                          Please grant spending permission in the sidebar to use this API.
+                          Free trial limit reached. Please purchase the listing to integrate it into your app.
                         </div>
-                      ) : null}
+                      ) : (
+                         <div className="mt-4 p-4 border rounded-lg bg-muted/50 text-sm text-muted-foreground">
+                           You have {trialInfo.remaining} free trial request{trialInfo.remaining > 1 ? 's' : ''} remaining.
+                         </div>
+                      )}
                     </div>
                   </div>
                 )}
 
                 {messages.map((msg, i) => (
                   <div key={i} className={"flex " + (msg.role === "user" ? "justify-end" : "justify-start")}>
-                    <div className={"max-w-[80%] rounded-2xl px-4 py-2.5 " + (msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    <div className={"max-w-[80%] rounded-2xl px-4 py-2.5 " + (msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted overflow-hidden")}>
+                      {msg.role === "user" ? (
+                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      ) : (
+                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-muted/50 prose-pre:border">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -299,18 +312,29 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
               </CardContent>
 
               <div className="p-4 border-t shrink-0">
+                {trialInfo !== null && (
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-muted-foreground">
+                      Free Trial Status: {trialInfo.remaining > 0 ? (
+                        <span className="text-primary font-medium">{trialInfo.remaining} / {trialInfo.limit} remaining</span>
+                      ) : (
+                        <span className="text-destructive font-medium">Limit reached</span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Input
-                    placeholder={!isReady ? "Awaiting permission..." : "Type your message..."}
+                    placeholder={!trialInfo?.hasTrialRemaining ? "Free trial limit reached" : "Type your message..."}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-                    disabled={isLoading || !isConnected || !chatEndpoint || !isReady}
+                    disabled={isLoading || !isConnected || !trialInfo?.hasTrialRemaining}
                     className="flex-1"
                   />
                   <Button
                     onClick={handleSend}
-                    disabled={isLoading || !input.trim() || !isConnected || !chatEndpoint || !isReady}
+                    disabled={isLoading || !input.trim() || !isConnected || !trialInfo?.hasTrialRemaining}
                     size="icon"
                   >
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

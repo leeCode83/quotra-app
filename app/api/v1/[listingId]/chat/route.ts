@@ -46,7 +46,7 @@ const dynamicPrice: DynamicPrice = async (context) => {
   const { data: listing } = await supabase
     .from("listings")
     .select("price_per_call_usdc")
-    .eq("delegation_id", match[1])
+    .eq("id", match[1])
     .single();
   if (!listing) return "$0.001";
   return `$${listing.price_per_call_usdc}`;
@@ -81,9 +81,9 @@ async function handler(request: NextRequest): Promise<NextResponse> {
   try {
     const match = request.nextUrl.pathname.match(/\/api\/v1\/([^/]+)\/chat/);
     if (!match) {
-      return NextResponse.json({ error: "Invalid delegation ID" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid listing ID" }, { status: 400 });
     }
-    const delegationId = match[1];
+    const listingId = match[1];
 
     // Ekstrak wallet address consumer dari header (opsional — digunakan untuk mencatat consumer_id di transaksi)
     const consumerAddress = request.headers.get("x-wallet-address") ?? undefined;
@@ -91,7 +91,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     const supabase = await createClient();
 
     // Validate listing (status, expiry, remaining calls)
-    const listing = await getActiveListing(supabase, delegationId);
+    const listing = await getActiveListing(supabase, listingId);
 
     // Parse and validate request body
     const bodyText = await request.text();

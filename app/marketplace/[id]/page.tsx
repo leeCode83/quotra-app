@@ -77,7 +77,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   const handleCopyEndpoint = () => {
     if (!listing) return;
-    const url = (process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app") + "/api/v1/" + (listing.delegation_id || "{delegation_id}") + "/chat";
+    const url = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000") + "/api/v1/" + listing.id + "/chat";
     navigator.clipboard.writeText(url);
     setCopiedEndpoint(true);
     setTimeout(() => setCopiedEndpoint(false), 2000);
@@ -127,11 +127,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const isActive = listing.status === "active";
   const quotaUsed = listing.max_calls - listing.remaining_calls;
   const quotaPercent = listing.max_calls > 0 ? Math.round((quotaUsed / listing.max_calls) * 100) : 0;
-  const gatewayUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://quotra.app") + "/api/v1/" + (listing.delegation_id || "{delegation_id}") + "/chat";
+  const gatewayUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000") + "/api/v1/" + listing.id + "/chat";
   const providerName = listing.provider?.name || (listing.provider?.wallet_address
     ? listing.provider.wallet_address.slice(0, 6) + "..." + listing.provider.wallet_address.slice(-4)
     : "Unknown");
-  const hasDelegation = !!listing.delegation_id;
 
   return (
     <div className="relative min-h-screen">
@@ -372,30 +371,31 @@ console.log(data.text);`}</pre>
                     </div>
 
                     <div className="pt-2 space-y-3">
+                      <Button className="w-full h-11 gap-2" variant="outline" asChild>
+                        <Link href={"/playground/" + listing.id}>
+                          <Beaker className="h-4 w-4" />
+                          Try Free Trial
+                        </Link>
+                      </Button>
+
                       {!isConnected ? (
-                        <Button className="w-full h-11 gap-2" onClick={() => connect()}>
+                        <Button className="w-full h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => connect()}>
                           <Wallet className="h-4 w-4" />
-                          Connect Wallet to Use
+                          Connect Wallet to Buy
                         </Button>
                       ) : !isActive ? (
                         <Button className="w-full h-11" disabled>Listing Inactive</Button>
-                      ) : hasDelegation ? (
-                        savedPermissionContext ? (
-                          <Button className="w-full h-11 gap-2" asChild>
-                            <Link href={"/playground/" + listing.id}>
-                              <Beaker className="h-4 w-4" />
-                              Try in Playground
-                            </Link>
-                          </Button>
-                        ) : isCheckingPermission ? (
-                          <Button className="w-full h-11 gap-2" disabled>
-                            <Loader2 className="h-4 w-4 animate-spin" /> Checking...
-                          </Button>
-                        ) : (
-                          <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
-                        )
+                      ) : savedPermissionContext ? (
+                        <div className="flex items-center justify-center gap-2 text-green-500 font-medium text-sm py-2">
+                          <Check className="h-4 w-4" />
+                          Permission Granted
+                        </div>
+                      ) : isCheckingPermission ? (
+                        <Button className="w-full h-11 gap-2" disabled variant="outline">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Checking Status...
+                        </Button>
                       ) : (
-                        <Button className="w-full h-11" disabled>No delegation configured</Button>
+                        <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
                       )}
                     </div>
 
@@ -415,8 +415,7 @@ console.log(data.text);`}</pre>
         </div>
       </div>
 
-      {hasDelegation && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-lg p-4 z-50">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-lg p-4 z-50">
           <div className="flex items-center justify-between max-w-4xl mx-auto">
             <div>
               <p className="text-lg font-bold text-primary">
@@ -433,7 +432,6 @@ console.log(data.text);`}</pre>
             </div>
           </div>
         </div>
-      )}
     </div>
   );
 }

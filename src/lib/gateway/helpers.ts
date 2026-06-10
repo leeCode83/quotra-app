@@ -16,13 +16,13 @@ export class GatewayError extends Error {
   }
 }
 
-export async function getActiveListing(supabase: SupabaseClient, delegationId: string) {
+export async function getActiveListing(supabase: SupabaseClient, listingId: string) {
   const { data: listing, error } = await supabase
     .from("listings")
     .select(
       "id, status, expires_at, remaining_calls, max_input_chars, max_completion_tokens, price_per_call_usdc, encrypted_key, key_iv, key_auth_tag, provider_id, model_name",
     )
-    .eq("delegation_id", delegationId)
+    .eq("id", listingId)
     .single();
 
   if (error || !listing) {
