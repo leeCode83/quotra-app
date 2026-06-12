@@ -22,6 +22,7 @@
 import { x402ResourceServer } from "@x402/next"
 import { HTTPFacilitatorClient } from "@x402/core/http"
 import { x402ExactEvmErc7710ServerScheme } from "@metamask/x402"
+import { registerExactEvmScheme } from "@x402/evm/exact/server"
 
 // MetaMask Facilitator untuk Base Sepolia
 const FACILITATOR_URL =
@@ -35,3 +36,7 @@ export const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_UR
 
 export const server = new x402ResourceServer(facilitatorClient)
   .register(NETWORK, new x402ExactEvmErc7710ServerScheme())
+
+// Register base ExactEvmScheme agar server juga bisa verifikasi payment dari
+// standard EVM client (ExactEvmScheme tanpa ERC-7710, misal untuk test script).
+registerExactEvmScheme(server, { networks: [NETWORK] })
