@@ -3,31 +3,50 @@
 import { use, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { ArrowLeft, Beaker, Check, Copy, Shield, Timer, Terminal, Wallet, Zap, Loader2 } from "lucide-react";
+import { ArrowLeft, Beaker, Check, Copy, Timer, Terminal, Wallet, Zap, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase-client";
-import { formatPrice } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { CallsBar } from "@/components/CallsBar";
+import NumberFlow from "@number-flow/react";
 import type { ListingWithProvider } from "@/types";
 import { useAccount } from "wagmi";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { GrantPermissionButton } from "@/components/web3/GrantPermissionButton";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.08 },
-  },
-};
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  const [copied, setCopied] = useState(false);
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" as const } },
-};
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group rounded-md border bg-[#1E1E1E] overflow-hidden">
+      <div className="absolute right-2 top-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-[#1E1E1E]/80 backdrop-blur-sm rounded">
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-zinc-800" onClick={handleCopy}>
+          {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+      <SyntaxHighlighter
+        language={language}
+        style={vscDarkPlus}
+        customStyle={{ margin: 0, padding: '1rem', background: 'transparent', fontSize: '0.875rem' }}
+        wrapLongLines={true}
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  );
+}
 
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -92,20 +111,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="md:col-span-2 space-y-6">
-              <div className="flex gap-4">
-                <div className="w-12 h-12 rounded-xl bg-muted animate-pulse shrink-0" />
-                <div className="space-y-2 flex-1">
-                  <div className="h-8 w-3/4 bg-muted rounded animate-pulse" />
-                  <div className="h-4 w-1/3 bg-muted rounded animate-pulse" />
-                </div>
-              </div>
-              <div className="h-48 bg-muted rounded-xl animate-pulse" />
-              <div className="h-36 bg-muted rounded-xl animate-pulse" />
-            </div>
-            <div className="h-64 bg-muted rounded-xl animate-pulse" />
+          <div className="space-y-3">
+            <div className="h-8 w-2/3 bg-muted rounded animate-pulse" />
+            <div className="h-4 w-1/4 bg-muted rounded animate-pulse" />
           </div>
+          <div className="h-64 bg-muted rounded-2xl animate-pulse" />
+          <div className="h-52 bg-muted rounded-2xl animate-pulse" />
         </div>
       </motion.div>
     );
@@ -113,7 +124,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   if (error || !listing) {
     return (
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="container mx-auto px-4 py-8">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="container mx-auto px-4 py-8">
         <div className="max-w-md mx-auto text-center">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-destructive/10 flex items-center justify-center">
             <span className="text-destructive text-2xl font-bold">!</span>
@@ -129,187 +140,220 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const isActive = listing.status === "active";
-  const quotaUsed = listing.max_calls - listing.remaining_calls;
-  const quotaPercent = listing.max_calls > 0 ? Math.round((quotaUsed / listing.max_calls) * 100) : 0;
+  const price = parseFloat(listing.price_per_call_usdc?.toString() || "0");
   const gatewayUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000") + "/api/v1/" + listing.id + "/chat";
   const providerName = listing.provider?.name || (listing.provider?.wallet_address
     ? listing.provider.wallet_address.slice(0, 6) + "..." + listing.provider.wallet_address.slice(-4)
     : "Unknown");
 
   return (
-    <div className="relative min-h-screen">
-      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-        <div className="absolute -top-40 -right-40 w-[30rem] h-[30rem] bg-purple-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-[25rem] h-[25rem] bg-indigo-500/10 rounded-full blur-3xl" />
-      </div>
-
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}>
       <div className="container mx-auto px-4 py-8 pb-24 md:pb-8">
-        <div className="max-w-4xl mx-auto">
-          <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
-            <Button variant="ghost" className="mb-6 -ml-3 text-muted-foreground hover:text-foreground" asChild>
-              <Link href="/marketplace">
-                <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Marketplace
-              </Link>
-            </Button>
-          </motion.div>
+        <div className="max-w-4xl mx-auto space-y-8">
+          <Button variant="ghost" className="-ml-3 text-muted-foreground hover:text-foreground" asChild>
+            <Link href="/marketplace">
+              <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Marketplace
+            </Link>
+          </Button>
 
-          <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid md:grid-cols-3 gap-8">
-            <div className="md:col-span-2 space-y-8">
-              <motion.div variants={itemVariants}>
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shrink-0 shadow-lg shadow-purple-500/20">
-                    {providerName[0]?.toUpperCase() || "A"}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{listing.name}</h1>
-                      <Badge variant={isActive ? "default" : "secondary"} className="gap-1.5">
-                        {isActive && (
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                          </span>
-                        )}
-                        {listing.status}
-                      </Badge>
-                    </div>
-                    <p className="text-muted-foreground mt-1 text-sm">by {providerName}</p>
-                  </div>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{listing.name}</h1>
+              <span className={cn(
+                "h-2.5 w-2.5 rounded-full animate-pulse",
+                isActive ? "bg-green-500" : "bg-muted-foreground/50"
+              )} />
+              <Badge variant="secondary" className="font-normal text-xs">{listing.model_name}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">by {providerName}</p>
+          </div>
+
+          <div className="rounded-2xl border border-foreground/10 p-6 md:p-8 space-y-6">
+            <div>
+              <p className="text-4xl md:text-5xl font-bold tracking-tight text-primary">
+                <NumberFlow
+                  value={price}
+                  format={{
+                    style: "currency",
+                    currency: "USD",
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 4,
+                  }}
+                />
+                <span className="text-base md:text-xl text-muted-foreground font-normal tracking-normal ml-1">/req</span>
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Remaining</span>
+                <span className="font-medium">{Number(listing.remaining_calls)} / {Number(listing.max_calls)} calls</span>
+              </div>
+              <CallsBar used={Number(listing.remaining_calls)} total={Number(listing.max_calls)} />
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Timer className="h-4 w-4 shrink-0" />
+              <span>Expires {new Date(listing.expires_at).toLocaleDateString("en-US", {
+                month: "short", day: "numeric", year: "numeric"
+              })}</span>
+            </div>
+
+            <div className="border-t border-foreground/10 pt-5 flex flex-col sm:flex-row gap-3">
+              <Button variant="outline" className="gap-2" asChild>
+                <Link href={"/playground/" + listing.id}>
+                  <Beaker className="h-4 w-4" />
+                  Try Free Trial
+                </Link>
+              </Button>
+
+              {!isConnected ? (
+                <Button className="gap-2" onClick={() => connect()}>
+                  <Wallet className="h-4 w-4" />
+                  Connect Wallet
+                </Button>
+              ) : !isActive ? (
+                <Button disabled>Listing Inactive</Button>
+              ) : savedPermissionContext ? (
+                <div className="flex items-center gap-2 text-green-500 font-medium text-sm px-4 py-2">
+                  <Check className="h-4 w-4" />
+                  Permission Granted
                 </div>
-              </motion.div>
+              ) : isCheckingPermission ? (
+                <Button disabled variant="outline" className="gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Checking Status...
+                </Button>
+              ) : (
+                <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
+              )}
+            </div>
 
-              <Tabs defaultValue={savedPermissionContext ? "integration" : "overview"} className="space-y-6">
-                <motion.div variants={itemVariants}>
-                  <TabsList className="bg-background/50 backdrop-blur-md border border-purple-500/10 p-1 w-full justify-start h-auto flex-wrap">
-                    <TabsTrigger value="overview" className="data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-400 rounded-md">Overview</TabsTrigger>
-                    <TabsTrigger value="integration" className="data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-400 rounded-md">Integration Guide</TabsTrigger>
-                  </TabsList>
-                </motion.div>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Zap className="h-3 w-3" /> Pay Per Call
+              </span>
+            </div>
+          </div>
 
-                <TabsContent value="overview" className="space-y-8 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
-                  <Card className="overflow-hidden border-purple-500/5">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                        About
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                        {listing.description || "No description provided."}
+          <Tabs defaultValue={savedPermissionContext ? "integration" : "overview"}>
+            <TabsList className="bg-background border border-foreground/10 p-1 w-full justify-start h-auto flex-wrap">
+              <TabsTrigger value="overview" className="rounded-md">Overview</TabsTrigger>
+              <TabsTrigger value="integration" className="rounded-md">Integration Guide</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="space-y-6 mt-6 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Terminal className="h-4 w-4" />
+                    API Specifications
+                  </CardTitle>
+                  <CardDescription>Gateway and parameter details for integration</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</p>
+                      <p className="font-semibold">{listing.model_name}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gateway Endpoint</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs bg-muted px-2 py-1 rounded border truncate">
+                          {gatewayUrl}
+                        </code>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCopyEndpoint}>
+                          {copiedEndpoint ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Max Input</p>
+                      <p className="font-semibold">{listing.max_input_chars.toLocaleString()} chars</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Max Output</p>
+                      <p className="font-semibold">{listing.max_completion_tokens.toLocaleString()} tokens</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Delegation ID</p>
+                      <p className="font-semibold font-mono text-sm truncate" title={listing.delegation_id || undefined}>
+                        {listing.delegation_id ? listing.delegation_id.slice(0, 8) + "..." : "--"}
                       </p>
-                    </CardContent>
-                  </Card>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Network</p>
+                      <p className="font-semibold">Base Sepolia</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                  <Card className="overflow-hidden border-purple-500/5">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Terminal className="h-4 w-4 text-purple-500" />
-                        API Specifications
-                      </CardTitle>
-                      <CardDescription>Gateway and parameter details for integration</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <div className="grid sm:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Model</p>
-                          <p className="font-semibold">{listing.model_name}</p>
+            <TabsContent value="integration" className="space-y-6 mt-6 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
+              <Card>
+                <CardHeader className="pb-3 border-b">
+                  <CardTitle className="text-lg">Quickstart Guide</CardTitle>
+                  <CardDescription>Integrate this AI model into your application</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-6 space-y-8">
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-semibold border text-sm">1</div>
+                      <h3 className="text-base font-semibold">Get Permission</h3>
+                    </div>
+                    <div className="ml-11 text-sm text-muted-foreground space-y-3">
+                      <p>Before you can call this endpoint, you must grant a session permission via ERC-7715. This authorizes your session key to make requests. Payments are handled per-call via x402.</p>
+                      {!isConnected ? (
+                        <Button variant="outline" className="gap-2" onClick={() => connect()}>
+                          <Wallet className="h-4 w-4" />
+                          Connect Wallet to Grant Permission
+                        </Button>
+                      ) : savedPermissionContext ? (
+                        <div className="flex items-center gap-2 text-green-500 font-medium text-sm py-2">
+                          <Check className="h-4 w-4" />
+                          Permission Granted
                         </div>
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gateway Endpoint</p>
-                          <div className="flex items-center gap-2">
-                            <code className="flex-1 text-xs bg-muted px-2 py-1 rounded border truncate">
-                              {gatewayUrl}
-                            </code>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCopyEndpoint}>
-                              {copiedEndpoint ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                            </Button>
-                          </div>
+                      ) : isCheckingPermission ? (
+                        <Button variant="outline" disabled className="gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Checking Status...
+                        </Button>
+                      ) : (
+                        <div className="pt-2">
+                          <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t">
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Max Input</p>
-                          <p className="font-semibold">{listing.max_input_chars.toLocaleString()} chars</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Max Output</p>
-                          <p className="font-semibold">{listing.max_completion_tokens.toLocaleString()} tokens</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Delegation ID</p>
-                          <p className="font-semibold font-mono text-sm truncate" title={listing.delegation_id || undefined}>
-                            {listing.delegation_id ? listing.delegation_id.slice(0, 8) + "..." : "--"}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Network</p>
-                          <p className="font-semibold">Base Sepolia</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
+                      )}
+                    </div>
+                  </div>
 
-                <TabsContent value="integration" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
-                  <Card className="overflow-hidden border-purple-500/5">
-                    <CardHeader className="pb-3 border-b">
-                      <CardTitle className="text-lg">Quickstart Guide</CardTitle>
-                      <CardDescription>Integrate this AI model into your application</CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-6 space-y-8">
-                      
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-500/10 text-purple-500 font-semibold border border-purple-500/20">1</div>
-                          <h3 className="text-base font-semibold">Get Permission</h3>
-                        </div>
-                        <div className="ml-11 text-sm text-muted-foreground space-y-3">
-                          <p>Before you can call this endpoint, you must grant a session permission via ERC-7715. This authorizes your session key to make requests. Payments are handled per-call via x402.</p>
-                          {!isConnected ? (
-                            <Button variant="outline" className="gap-2 border-purple-500/20 hover:bg-purple-500/10" onClick={() => connect()}>
-                              <Wallet className="h-4 w-4 text-purple-500" />
-                              Connect Wallet to Grant Permission
-                            </Button>
-                          ) : savedPermissionContext ? (
-                            <div className="flex items-center gap-2 text-green-500 font-medium text-sm py-2">
-                              <Check className="h-4 w-4" />
-                              Permission Granted
-                            </div>
-                          ) : isCheckingPermission ? (
-                            <Button variant="outline" disabled className="gap-2 border-purple-500/20">
-                              <Loader2 className="h-4 w-4 animate-spin text-purple-500" /> Checking Status...
-                            </Button>
-                          ) : (
-                            <div className="pt-2">
-                              <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-semibold border text-sm">2</div>
+                      <h3 className="text-base font-semibold">Install Client SDK</h3>
+                    </div>
+                    <div className="ml-11">
+                      <p className="text-sm text-muted-foreground mb-3">Install our lightweight HTTP client to handle the 402 payment flow automatically.</p>
+                      <CodeBlock language="bash" code="npm install @x402/fetch @x402/core" />
+                    </div>
+                  </div>
 
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-500/10 text-purple-500 font-semibold border border-purple-500/20">2</div>
-                          <h3 className="text-base font-semibold">Install Client SDK</h3>
-                        </div>
-                        <div className="ml-11">
-                          <p className="text-sm text-muted-foreground mb-3">Install our lightweight HTTP client to handle the 402 payment flow automatically.</p>
-                          <div className="bg-muted rounded-md p-3 font-mono text-xs text-muted-foreground border">
-                            npm install @x402/fetch @x402/core
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-500/10 text-purple-500 font-semibold border border-purple-500/20">3</div>
-                          <h3 className="text-base font-semibold">Call the API</h3>
-                        </div>
-                        <div className="ml-11">
-                          <p className="text-sm text-muted-foreground mb-3">Use the x402 HTTP client with your wallet as the signer. It auto-handles the 402 payment flow.</p>
-                          <div className="bg-muted rounded-md p-4 font-mono text-xs overflow-x-auto border">
-                            <pre>{`import { x402Client } from "@x402/core/client";
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-semibold border text-sm">3</div>
+                      <h3 className="text-base font-semibold">Call the API</h3>
+                    </div>
+                    <div className="ml-11">
+                      <p className="text-sm text-muted-foreground mb-3">Use the x402 HTTP client with your preferred signer (Wallet or Private Key). It auto-handles the 402 payment flow.</p>
+                      <Tabs defaultValue="client-side" className="w-full">
+                        <TabsList className="bg-background border border-foreground/10 p-1 mb-4 h-auto">
+                          <TabsTrigger value="client-side" className="rounded-md text-xs">Client Side</TabsTrigger>
+                          <TabsTrigger value="server-side" className="rounded-md text-xs">Server Side</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="client-side" className="m-0">
+                          <CodeBlock language="typescript" code={`import { x402Client } from "@x402/core/client";
 import { ExactEvmScheme } from "@x402/core";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import { createWalletClient, custom } from "viem";
@@ -341,115 +385,82 @@ const response = await fetchWithPayment("${gatewayUrl}", {
 });
 
 const data = await response.json();
-console.log(data.text);`}</pre>
-                          </div>
-                        </div>
-                      </div>
+console.log(data.text);`} />
+                        </TabsContent>
+                        <TabsContent value="server-side" className="m-0">
+                          <CodeBlock language="typescript" code={`import { x402Client } from "@x402/core/client";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
+import { toClientEvmSigner } from "@x402/evm";
+import { wrapFetchWithPayment } from "@x402/fetch";
+import { http, createPublicClient } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { baseSepolia } from "viem/chains";
 
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            </div>
+// 1. Create signer from private key
+const pk = process.env.PRIVATE_KEY; // e.g. 0x...
+const account = privateKeyToAccount(pk);
+const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
+const signer = toClientEvmSigner(account, publicClient);
 
-            <motion.div variants={itemVariants}>
-              <div className="md:sticky md:top-24 space-y-4">
-                <Card className="border-purple-500/10 shadow-lg shadow-purple-500/5 md:backdrop-blur-xl md:bg-background/80">
-                  <CardContent className="p-6 space-y-6">
-                    <div className="text-center pb-4 border-b">
-                      <p className="text-4xl font-bold text-primary">
-                        ${formatPrice(parseFloat(listing.price_per_call_usdc))}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">per request</p>
+// 2. Create x402 client with ExactEvmScheme
+const client = new x402Client();
+registerExactEvmScheme(client, { signer });
+const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+
+// 3. Call gateway — 402 payment is handled automatically
+const response = await fetchWithPayment("${gatewayUrl}", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-wallet-address": account.address,
+  },
+  body: JSON.stringify({
+    chat: "Explain quantum computing in simple terms.",
+    systemPrompt: "You are an expert physicist." // Optional
+  })
+});
+
+const data = await response.json();
+console.log(data.text);`} />
+                        </TabsContent>
+                      </Tabs>
                     </div>
+                  </div>
 
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Quota Used</span>
-                        <span className="font-medium tabular-nums">{quotaUsed} / {listing.max_calls}</span>
-                      </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <motion.div
-                          className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"
-                          initial={{ width: 0 }}
-                          animate={{ width: quotaPercent + "%" }}
-                          transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{listing.remaining_calls} remaining</span>
-                        <span>{quotaPercent}% used</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 text-sm">
-                      <Timer className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="text-muted-foreground">Expires</span>
-                      <span className="font-medium ml-auto">{new Date(listing.expires_at).toLocaleDateString()}</span>
-                    </div>
-
-                    <div className="pt-2 space-y-3">
-                      <Button className="w-full h-11 gap-2" variant="outline" asChild>
-                        <Link href={"/playground/" + listing.id}>
-                          <Beaker className="h-4 w-4" />
-                          Try Free Trial
-                        </Link>
-                      </Button>
-
-                      {!isConnected ? (
-                        <Button className="w-full h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => connect()}>
-                          <Wallet className="h-4 w-4" />
-                          Connect Wallet to Buy
-                        </Button>
-                      ) : !isActive ? (
-                        <Button className="w-full h-11" disabled>Listing Inactive</Button>
-                      ) : savedPermissionContext ? (
-                        <div className="flex items-center justify-center gap-2 text-green-500 font-medium text-sm py-2">
-                          <Check className="h-4 w-4" />
-                          Permission Granted
-                        </div>
-                      ) : isCheckingPermission ? (
-                        <Button className="w-full h-11 gap-2" disabled variant="outline">
-                          <Loader2 className="h-4 w-4 animate-spin" /> Checking Status...
-                        </Button>
-                      ) : (
-                        <GrantPermissionButton listingId={listing.id} onGranted={checkPermission} />
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground pt-2">
-                      <span className="flex items-center gap-1">
-                        <Shield className="h-3 w-3" /> Secure Payment
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Zap className="h-3 w-3" /> Pay Per Call
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </motion.div>
-          </motion.div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
       <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-lg p-4 z-50">
-          <div className="flex items-center justify-between max-w-4xl mx-auto">
-            <div>
-              <p className="text-lg font-bold text-primary">
-                ${formatPrice(parseFloat(listing.price_per_call_usdc))}
-              </p>
-              <p className="text-xs text-muted-foreground">per request</p>
-            </div>
-            <div className="min-w-0 max-w-[180px]">
-              <Button className="w-full h-10 text-sm gap-1.5" asChild>
-                <Link href={"/playground/" + listing.id}>
-                  <Beaker className="h-4 w-4" /> Try Now
-                </Link>
-              </Button>
-            </div>
+        <div className="flex items-center justify-between max-w-4xl mx-auto">
+          <div>
+            <p className="text-lg font-bold text-primary">
+              <NumberFlow
+                value={price}
+                format={{
+                  style: "currency",
+                  currency: "USD",
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 4,
+                }}
+              />
+            </p>
+            <p className="text-xs text-muted-foreground">per request</p>
+          </div>
+          <div className="min-w-0 max-w-[180px]">
+            <Button className="w-full h-10 text-sm gap-1.5" asChild>
+              <Link href={"/playground/" + listing.id}>
+                <Beaker className="h-4 w-4" /> Try Now
+              </Link>
+            </Button>
           </div>
         </div>
-    </div>
+      </div>
+    </motion.div>
   );
 }
+
+

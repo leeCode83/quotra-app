@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import NumberFlow from "@number-flow/react";
+import { CallsBar } from "@/components/CallsBar";
 import type { ListingWithProvider } from "@/types";
 
 interface ListingCardProps {
@@ -16,24 +17,6 @@ interface ListingCardProps {
   error?: string | null;
   className?: string;
   children?: React.ReactNode;
-}
-
-function CallsBar({ used, total }: { used: number; total: number }) {
-  const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-
-  return (
-    <div className="w-full">
-      <div className="w-full h-2 bg-foreground/10 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{ width: `${pct}%`, background: "linear-gradient(90deg, #a78bfa, #6d28d9)" }}
-        />
-      </div>
-      <span className="text-xs font-medium text-muted-foreground mt-2 block">
-        {used} / {total} calls
-      </span>
-    </div>
-  );
 }
 
 function formatDate(date: string | Date) {
@@ -148,8 +131,11 @@ export function ListingCard({ listing, isLoading, error, className, children }: 
             </div>
         </div>
 
-        <div className="flex flex-col items-start w-full p-4 md:p-6 gap-y-3">
+        <div className="flex flex-col items-start w-full p-4 md:p-6 gap-y-2">
           <CallsBar used={Number(listing.remaining_calls)} total={Number(listing.max_calls)} />
+          <span className="text-xs font-medium text-muted-foreground">
+            {Number(listing.remaining_calls)} / {Number(listing.max_calls)} calls
+          </span>
         </div>
     </div>
   );
