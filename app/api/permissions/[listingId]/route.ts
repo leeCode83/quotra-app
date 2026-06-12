@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { createRouteClient } from "@/lib/route-client";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ listingId: string }> },
 ) {
   try {
+    const { supabase } = await createRouteClient(req);
     const { listingId } = await params;
     const { wallet_address } = await req.json();
 

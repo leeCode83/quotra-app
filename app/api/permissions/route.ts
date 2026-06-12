@@ -1,17 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 
 export async function POST(req: Request) {
   try {
-    const walletAddress = req.headers.get("x-wallet-address");
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { supabase, walletAddress } = await createRouteClient(req);
+    if (!walletAddress) return unauthorized();
 
     const { listing_id, permission_context, session_account_address, expires_at } = await req.json();
 

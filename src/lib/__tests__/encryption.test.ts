@@ -9,11 +9,11 @@ describe("encryption", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.ENCRYPTION_KEY = MOCK_KEY;
+    process.env.QUOTRA_ENCRYPTION_KEY = MOCK_KEY;
   });
 
   afterEach(() => {
-    delete process.env.ENCRYPTION_KEY;
+    delete process.env.QUOTRA_ENCRYPTION_KEY;
   });
 
   describe("encrypt and decrypt", () => {
@@ -72,13 +72,13 @@ describe("encryption", () => {
       );
     });
 
-    it("throws if ENCRYPTION_KEY is missing", async () => {
-      delete process.env.ENCRYPTION_KEY;
+    it("throws if QUOTRA_ENCRYPTION_KEY is missing", async () => {
+      delete process.env.QUOTRA_ENCRYPTION_KEY;
       await expect(encrypt("secret")).rejects.toThrow("Failed to encrypt data");
     });
     
-    it("throws if ENCRYPTION_KEY is invalid length", async () => {
-      process.env.ENCRYPTION_KEY = "1234";
+    it("throws if QUOTRA_ENCRYPTION_KEY is invalid length", async () => {
+      process.env.QUOTRA_ENCRYPTION_KEY = "1234";
       await expect(encrypt("secret")).rejects.toThrow("Failed to encrypt data");
     });
   });

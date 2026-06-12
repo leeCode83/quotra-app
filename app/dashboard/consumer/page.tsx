@@ -15,6 +15,7 @@ import { formatAddress } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-client";
 import { TransactionHistory, Transaction as TxProp } from "@/components/TransactionHistory";
 import type { Transaction, Listing } from "@/types";
+import { apiClient } from "@/lib/api-client";
 
 /** Shape untuk satu permission dari /api/consumer/permissions */
 interface ConsumerPermission {
@@ -86,9 +87,7 @@ export default function ConsumerDashboardPage() {
     queryKey: ["consumer-permissions", session.address],
     queryFn: async () => {
       if (!session.address) return [];
-      const res = await fetch("/api/consumer/permissions", {
-        headers: { "x-wallet-address": session.address },
-      });
+      const res = await apiClient("/api/consumer/permissions");
       if (!res.ok) throw new Error("Failed to fetch permissions");
       const json = await res.json();
       return json.permissions as ConsumerPermission[];
@@ -99,12 +98,8 @@ export default function ConsumerDashboardPage() {
   /** Mutation: revoke permission */
   const revokeMutation = useMutation({
     mutationFn: async (permissionId: string) => {
-      const res = await fetch("/api/consumer/permissions", {
+      const res = await apiClient("/api/consumer/permissions", {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "x-wallet-address": session.address ?? "",
-        },
         body: JSON.stringify({ permissionId }),
       });
       if (!res.ok) throw new Error("Failed to revoke permission");

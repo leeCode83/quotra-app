@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 import { createListingSchema } from "@/lib/validators";
 import { encrypt } from "@/lib/encryption";
 
@@ -13,10 +14,8 @@ export const runtime = "nodejs";
  */
 export async function POST(request: NextRequest) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
+    const { walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
     const body = await request.json();
     const parseResult = createListingSchema.safeParse(body);

@@ -3,7 +3,7 @@
 import { usePermissions } from "@/hooks/usePermissions";
 import { Shield, Loader2, Check } from "lucide-react";
 import { useState } from "react";
-import { useAccount } from "wagmi";
+import { apiClient } from "@/lib/api-client";
 
 interface GrantPermissionButtonProps {
   listingId: string;
@@ -12,7 +12,6 @@ interface GrantPermissionButtonProps {
 
 export function GrantPermissionButton({ listingId, onGranted }: GrantPermissionButtonProps) {
   const { requestPermission, isLoading, error: permissionError } = usePermissions();
-  const { address } = useAccount();
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -34,12 +33,8 @@ export function GrantPermissionButton({ listingId, onGranted }: GrantPermissionB
       const permission = result.permissions[0];
       
       // Save permission to backend
-      const res = await fetch("/api/permissions", {
+      const res = await apiClient("/api/permissions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-wallet-address": address || "",
-        },
         body: JSON.stringify({
           listing_id: listingId,
           permission_context: permission.context,

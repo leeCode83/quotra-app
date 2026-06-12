@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase-server";
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 
 export async function POST(request: NextRequest) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
+    const { supabase, walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
     const body = await request.json();
     const listingId = body?.listing_id;
@@ -16,8 +14,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const supabase = await createClient();
 
     const { data: provider, error: providerError } = await supabase
       .from("providers")

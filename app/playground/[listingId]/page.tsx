@@ -16,6 +16,7 @@ import remarkGfm from "remark-gfm";
 import { createClient } from "@/lib/supabase-client";
 import type { ListingWithProvider } from "@/types";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { apiClient } from "@/lib/api-client";
 
 interface Message {
   role: "user" | "assistant";
@@ -144,12 +145,8 @@ export default function PlaygroundPage({ params }: { params: Promise<{ listingId
         ...(systemPrompt.trim() ? { systemPrompt: systemPrompt.trim() } : {}),
       };
 
-      const result = await fetch(`/api/playground/chat?listingId=${listingId}`, {
+      const result = await apiClient(`/api/playground/chat?listingId=${listingId}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(address ? { "x-wallet-address": address } : {}),
-        },
         body: JSON.stringify(payload),
       });
 

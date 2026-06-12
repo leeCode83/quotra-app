@@ -14,6 +14,19 @@ mockSupabaseEqObj.eq.mockReturnValue(mockSupabaseEqObj);
 
 const mockSupabaseSelect = vi.fn(() => mockSupabaseEqObj);
 
+vi.mock("@/lib/route-client", () => ({
+  createRouteClient: vi.fn(() => ({
+    supabase: {
+      from: vi.fn(() => ({
+        select: mockSupabaseSelect,
+        update: vi.fn(() => mockSupabaseEqObj),
+        insert: mockSupabaseInsert,
+      })),
+    },
+    walletAddress: "0xABC",
+  })),
+}));
+
 vi.mock("@/lib/supabase-server", () => ({
   createClient: vi.fn(() => ({
     from: vi.fn(() => ({
@@ -49,6 +62,9 @@ vi.mock("@/lib/encryption", () => ({
 
 vi.mock("@/lib/ai-providers", () => ({
   callAIProvider: vi.fn(() => ({ text: "AI Response", usage: {} })),
+  streamAIProvider: vi.fn(() => ({
+    toTextStreamResponse: vi.fn(() => new Response("AI Response")),
+  })),
   AIProviderError: class extends Error {
     status = 500;
     code = "AI_ERR";
@@ -91,7 +107,6 @@ describe("Playground Chat Route", () => {
 
     const req = new NextRequest("http://localhost/api/playground/chat?listingId=123", {
       method: "POST",
-      headers: { "x-wallet-address": "0xABC" },
       body: JSON.stringify({ chat: "Hello" }),
     });
 
@@ -107,14 +122,13 @@ describe("Playground Chat Route", () => {
 
     const req = new NextRequest("http://localhost/api/playground/chat?listingId=123", {
       method: "POST",
-      headers: { "x-wallet-address": "0xABC" },
       body: JSON.stringify({ chat: "Hello" }),
     });
 
     const res = await POST(req);
     expect(res.status).toBe(200);
-    
-    const json = await res.json();
-    expect(json.text).toBe("AI Response");
+
+    const text = await res.text();
+    expect(text).toBe("AI Response");
   });
 });

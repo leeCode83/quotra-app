@@ -33,7 +33,7 @@ export function hexToBuffer(hex: string): Uint8Array {
  * @throws Error if ENCRYPTION_KEY environment variable is not set or invalid
  */
 async function getEncryptionKey(): Promise<CryptoKey> {
-  const hexKey = process.env.QUOTRA_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
+  const hexKey = process.env.QUOTRA_ENCRYPTION_KEY;
   if (!hexKey) {
     throw new Error("QUOTRA_ENCRYPTION_KEY environment variable is not set.");
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 
 export const runtime = "nodejs";
 
@@ -10,13 +10,8 @@ export const runtime = "nodejs";
  */
 export async function POST(request: NextRequest) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json(
-        { error: "Unauthorized: x-wallet-address header required" },
-        { status: 401 }
-      );
-    }
+    const { supabase, walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
     if (!/^0x[a-f0-9]{40}$/.test(walletAddress)) {
       return NextResponse.json(
@@ -24,8 +19,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const supabase = supabaseAdmin;
 
     // Check if already registered
     const { data: existing } = await supabase
@@ -75,15 +68,8 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json(
-        { error: "Unauthorized: x-wallet-address header required" },
-        { status: 401 }
-      );
-    }
-
-    const supabase = supabaseAdmin;
+    const { supabase, walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
     const { data: provider, error } = await supabase
       .from("providers")
       .select("id, wallet_address, pending_earnings_usdc, total_earned_usdc, created_at")

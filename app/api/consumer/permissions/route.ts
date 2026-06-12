@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 
 export const runtime = "nodejs";
 
@@ -9,12 +9,10 @@ export const runtime = "nodejs";
  */
 export async function GET(request: NextRequest) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
+    const { supabase, walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
-    const { data: consumer } = await supabaseAdmin
+    const { data: consumer } = await supabase
       .from("consumers")
       .select("id")
       .eq("wallet_address", walletAddress)
@@ -24,7 +22,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ permissions: [] });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("consumer_permissions")
       .select(`
         id,
@@ -63,17 +61,15 @@ export async function GET(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
+    const { supabase, walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
     const { permissionId } = await request.json();
     if (!permissionId) {
       return NextResponse.json({ error: "permissionId is required" }, { status: 400 });
     }
 
-    const { data: consumer } = await supabaseAdmin
+    const { data: consumer } = await supabase
       .from("consumers")
       .select("id")
       .eq("wallet_address", walletAddress)
@@ -84,7 +80,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Verifikasi ownership sebelum revoke
-    const { data: permission, error: findError } = await supabaseAdmin
+    const { data: permission, error: findError } = await supabase
       .from("consumer_permissions")
       .select("id, consumer_id")
       .eq("id", permissionId)
@@ -98,7 +94,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized: you do not own this permission" }, { status: 403 });
     }
 
-    const { error: updateError } = await supabaseAdmin
+    const { error: updateError } = await supabase
       .from("consumer_permissions")
       .update({ status: "revoked" })
       .eq("id", permissionId);

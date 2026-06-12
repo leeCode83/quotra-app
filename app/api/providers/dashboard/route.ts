@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
-
-    const supabase = supabaseAdmin;
+    const { supabase, walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
     // Fetch Provider
     const { data: provider, error: providerError } = await supabase

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { useAuth } from "@/hooks/useAuth";
 import { baseSepolia } from "viem/chains";
 import { BASE_SEPOLIA_EXPLORER_URL } from "@/lib/web3/config";
 import {
@@ -11,6 +12,7 @@ import {
   ExternalLink,
   LogOut,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 function truncateAddress(address: string): string {
@@ -25,13 +27,27 @@ export function WalletButton() {
     isConnecting,
     isWrongChain,
     connect,
-    disconnect,
+    disconnect: wagmiDisconnect,
     switchChain,
   } = useWalletConnection();
+
+  const { isAuthenticated, isLoggingIn, error: authError, login, logout } = useAuth();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isConnected && address && !isAuthenticated && !isLoggingIn) {
+      login();
+    }
+  }, [isConnected, address, isAuthenticated, isLoggingIn, login]);
+
+  const handleDisconnect = () => {
+    wagmiDisconnect();
+    logout();
+    setIsDropdownOpen(false);
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -69,10 +85,7 @@ export function WalletButton() {
     setIsDropdownOpen(false);
   };
 
-  const handleDisconnect = () => {
-    disconnect();
-    setIsDropdownOpen(false);
-  };
+
 
   if (!isConnected) {
     return (
@@ -86,6 +99,9 @@ export function WalletButton() {
           {isConnecting ? "Connecting..." : "Connect Wallet"}
         </span>
         <span className="sm:hidden">Connect</span>
+        {isConnecting || isLoggingIn ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : null}
       </button>
     );
   }
@@ -146,6 +162,15 @@ export function WalletButton() {
                 {baseSepolia.name}
               </span>
             </div>
+            <div className="mt-2 flex items-center gap-1.5">
+              <span className={`inline-block h-2 w-2 rounded-full ${isAuthenticated ? "bg-green-500" : "bg-yellow-500"}`}></span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {isLoggingIn ? "Signing in..." : isAuthenticated ? "Authenticated" : "Not signed in"}
+              </span>
+            </div>
+            {authError && (
+              <p className="mt-1 text-xs text-red-500">{authError}</p>
+            )}
           </div>
 
           <div className="py-1">
@@ -165,6 +190,18 @@ export function WalletButton() {
               View on Explorer
             </button>
           </div>
+
+          {!isAuthenticated && !isLoggingIn ? (
+            <div className="border-t border-zinc-100 dark:border-zinc-800 py-1">
+              <button
+                onClick={login}
+                className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <Wallet className="h-4 w-4" />
+                Sign In with Wallet
+              </button>
+            </div>
+          ) : null}
 
           <div className="border-t border-zinc-100 dark:border-zinc-800 py-1">
             <button

@@ -35,6 +35,7 @@ import { cn, formatAddress } from "@/lib/utils";
 import { TransactionHistory, Transaction } from "@/components/TransactionHistory";
 import { useProviderClaim } from "@/hooks/useProviderClaim";
 import { useDelegation } from "@/hooks/useDelegation";
+import { apiClient } from "@/lib/api-client";
 
 const DEFAULT_MODEL_MAP: Record<string, string> = {
   openai: "gpt-4o-mini",
@@ -71,9 +72,7 @@ export default function ProviderDashboardPage() {
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
     queryKey: ["provider-dashboard", session.address],
     queryFn: async () => {
-      const res = await fetch("/api/providers/dashboard", {
-        headers: { "x-wallet-address": session.address || "" },
-      });
+      const res = await apiClient("/api/providers/dashboard");
       if (!res.ok) {
         if (res.status === 404) return null; // No provider yet
         throw new Error("Failed to fetch dashboard");
@@ -125,12 +124,8 @@ export default function ProviderDashboardPage() {
         delegationManager: delegationResult.delegationManager,
       };
 
-      const res = await fetch("/api/providers/listings", {
+      const res = await apiClient("/api/providers/listings", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-wallet-address": session.address,
-        },
         body: JSON.stringify(payload, (key, value) =>
           typeof value === "bigint" ? value.toString() : value
         ),
@@ -154,11 +149,8 @@ export default function ProviderDashboardPage() {
   const handleRevoke = async (listingId: string) => {
     setRevokingId(listingId);
     try {
-      const res = await fetch(`/api/listings/${listingId}`, {
+      const res = await apiClient(`/api/listings/${listingId}`, {
         method: "DELETE",
-        headers: { 
-          "x-wallet-address": session.address,
-        }
       });
       if (!res.ok) {
         const err = await res.json();
@@ -179,9 +171,8 @@ export default function ProviderDashboardPage() {
     setRegistering(true);
     setRegisterError(null);
     try {
-      const res = await fetch("/api/providers", {
+      const res = await apiClient("/api/providers", {
         method: "POST",
-        headers: { "x-wallet-address": session.address || "" },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Registration failed");
@@ -191,7 +182,7 @@ export default function ProviderDashboardPage() {
     } finally {
       setRegistering(false);
     }
-  }, [session.address, queryClient]);
+  }, [session.address, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderFormFields = () => (
     <div className="space-y-4">

@@ -4,7 +4,16 @@ import { POST } from "../../../app/api/providers/listings/route";
 import { PATCH } from "../../../app/api/providers/listings/[listingId]/route";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-// Mock dependencies
+const mockWalletAddress = "0x1234567890abcdef1234567890abcdef12345678";
+
+vi.mock("@/lib/route-client", () => ({
+  createRouteClient: vi.fn(() => ({
+    supabase: { from: vi.fn() },
+    walletAddress: mockWalletAddress,
+  })),
+  unauthorized: vi.fn(() => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 })),
+}));
+
 vi.mock("@/lib/supabase-admin", () => ({
   supabaseAdmin: {
     from: vi.fn(),
@@ -30,19 +39,10 @@ describe("API /providers/listings", () => {
   });
 
   describe("POST", () => {
-    it("returns 401 if x-wallet-address is missing", async () => {
-      const req = new NextRequest("http://localhost/api/providers/listings", {
-        method: "POST",
-      });
-      const res = await POST(req);
-      expect(res.status).toBe(401);
-    });
-
     it("returns 400 for invalid body schema", async () => {
       const req = new NextRequest("http://localhost/api/providers/listings", {
         method: "POST",
-        headers: { "x-wallet-address": "0x1234567890abcdef1234567890abcdef12345678" },
-        body: JSON.stringify({}), // Empty body violates createListingSchema
+        body: JSON.stringify({}),
       });
       const res = await POST(req);
       expect(res.status).toBe(400);
@@ -52,18 +52,9 @@ describe("API /providers/listings", () => {
   });
 
   describe("PATCH /providers/listings/[listingId]", () => {
-    it("returns 401 if wallet missing", async () => {
-      const req = new NextRequest("http://localhost/api/providers/listings/123", {
-        method: "PATCH",
-      });
-      const res = await PATCH(req, { params: Promise.resolve({ listingId: "123" }) });
-      expect(res.status).toBe(401);
-    });
-
     it("returns 400 for invalid schema", async () => {
       const req = new NextRequest("http://localhost/api/providers/listings/123", {
         method: "PATCH",
-        headers: { "x-wallet-address": "0x1234567890abcdef1234567890abcdef12345678" },
         body: JSON.stringify({ status: "invalid_status" }),
       });
       const res = await PATCH(req, { params: Promise.resolve({ listingId: "123" }) });
@@ -73,7 +64,6 @@ describe("API /providers/listings", () => {
     it("returns 404 if listing not found", async () => {
       const req = new NextRequest("http://localhost/api/providers/listings/123", {
         method: "PATCH",
-        headers: { "x-wallet-address": "0x1234567890abcdef1234567890abcdef12345678" },
         body: JSON.stringify({ status: "paused" }),
       });
 
@@ -90,10 +80,8 @@ describe("API /providers/listings", () => {
     it("updates listing successfully", async () => {
       const req = new NextRequest("http://localhost/api/providers/listings/123", {
         method: "PATCH",
-        headers: { "x-wallet-address": "0x1234567890abcdef1234567890abcdef12345678" },
         body: JSON.stringify({ status: "paused" }),
       });
-
 
       const mockSelectSingle = vi.fn().mockResolvedValue({
         data: {

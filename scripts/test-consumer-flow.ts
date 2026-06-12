@@ -7,10 +7,11 @@
  *   3. Ada listing aktif di database
  *
  * Usage:
- *   npx tsx --env-file=.env.local scripts/test-consumer-flow.ts <listing-id>
+ *   npx tsx --env-file=.env scripts/test-consumer-flow.ts <listing-id>
  *
  * Environment variables:
  *   TEST_PRIVATE_KEY=0x... (consumer EOA private key, termasuk 0x prefix)
+ *   TEST_JWT=<jwt> (JWT token for Authorization header)
  *   NEXT_PUBLIC_APP_URL=http://localhost:3000 (default)
  */
 
@@ -80,10 +81,11 @@ async function main() {
       headers: {
         "Content-Type": "application/json",
         "x-wallet-address": consumerAddress,
+        "Authorization": `Bearer ${process.env.TEST_JWT || ""}`,
       },
       body: JSON.stringify({
-        chat: "Hello, what AI model are you using?",
-        maxOutputTokens: 100,
+        chat: "Hello, tell me about Singapore culinary!",
+        maxOutputTokens: 500,
       }),
     },
   );

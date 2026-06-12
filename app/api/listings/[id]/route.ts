@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 import { listingSchema } from "@/lib/validators";
 
 async function verifyListingOwnership(
@@ -75,10 +76,8 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
+    const { walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
     const { id } = await context.params;
     const supabase = supabaseAdmin;
@@ -143,10 +142,8 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const walletAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Unauthorized: x-wallet-address header required" }, { status: 401 });
-    }
+    const { walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
 
     const { id } = await context.params;
     const supabase = supabaseAdmin;

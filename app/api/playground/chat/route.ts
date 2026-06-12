@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { createRouteClient, unauthorized } from "@/lib/route-client";
 import { decrypt } from "@/lib/encryption";
 import { streamAIProvider, AIProviderError } from "@/lib/ai-providers";
 import { gatewayRequestSchema } from "@/lib/validators";
@@ -47,10 +48,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Missing listingId query parameter" }, { status: 400 });
     }
 
-    const consumerAddress = request.headers.get("x-wallet-address")?.toLowerCase();
-    if (!consumerAddress) {
-      return NextResponse.json({ error: "Missing x-wallet-address header" }, { status: 400 });
-    }
+    const { walletAddress: consumerAddress } = await createRouteClient(request);
+    if (!consumerAddress) return unauthorized();
 
     // Check free trial usage
     const { data: trial, error: trialError } = await supabase

@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase-client";
 import type { ClaimHistory } from "@/types";
+import { apiClient } from "@/lib/api-client";
 
 export type ClaimStatus = "idle" | "calculating" | "claiming" | "success" | "error";
 
@@ -18,13 +19,10 @@ export interface UseProviderClaimReturn {
   refresh: () => Promise<void>;
 }
 
-async function fetchClaimHistory(walletAddress: string): Promise<ClaimHistory[]> {
+async function fetchClaimHistory(): Promise<ClaimHistory[]> {
   try {
-    const response = await fetch("/api/escrow/claim", {
+    const response = await apiClient("/api/escrow/claim", {
       method: "GET",
-      headers: {
-        "x-wallet-address": walletAddress,
-      },
     });
 
     if (!response.ok) {
@@ -91,12 +89,8 @@ export function useProviderClaim(): UseProviderClaimReturn {
 
     setClaimStatus("calculating");
     try {
-      // Fetch provider info via wallet address header
-      const providerResponse = await fetch("/api/providers", {
+      const providerResponse = await apiClient("/api/providers", {
         method: "GET",
-        headers: {
-          "x-wallet-address": address,
-        },
       });
 
       if (!providerResponse.ok) {
@@ -128,7 +122,7 @@ export function useProviderClaim(): UseProviderClaimReturn {
       const listingIds = providerListings.map((l: { id: string }) => l.id);
 
       if (listingIds.length > 0) {
-        const history = await fetchClaimHistory(address);
+        const history = await fetchClaimHistory();
         setClaimHistory(history);
 
         const totalClaimed = history
@@ -166,12 +160,8 @@ export function useProviderClaim(): UseProviderClaimReturn {
     setClaimStatus("claiming");
 
     try {
-      const response = await fetch("/api/escrow/claim", {
+      const response = await apiClient("/api/escrow/claim", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-wallet-address": address,
-        },
       });
 
       if (!response.ok) {

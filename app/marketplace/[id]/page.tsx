@@ -17,6 +17,7 @@ import type { ListingWithProvider } from "@/types";
 import { useAccount } from "wagmi";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { GrantPermissionButton } from "@/components/web3/GrantPermissionButton";
+import { apiClient } from "@/lib/api-client";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -62,9 +63,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     if (!address || !id) return;
     setIsCheckingPermission(true);
     try {
-      const res = await fetch(`/api/permissions/${id}`, {
+      const res = await apiClient(`/api/permissions/${id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet_address: address }),
       });
       const data = await res.json();
