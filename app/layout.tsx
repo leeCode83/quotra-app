@@ -9,6 +9,7 @@ import { Providers } from "@/components/Providers";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { Analytics } from "@vercel/analytics/react";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -44,6 +45,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <main className="flex-1"><ErrorBoundary>{children}</ErrorBoundary></main>
           <Footer />
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
