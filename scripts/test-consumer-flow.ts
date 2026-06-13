@@ -84,8 +84,7 @@ async function main() {
         "Authorization": `Bearer ${process.env.TEST_JWT || ""}`,
       },
       body: JSON.stringify({
-        chat: "Hello, tell me about Singapore culinary!",
-        maxOutputTokens: 500,
+        chat: "Hello, tell me about Singapore culinary!"
       }),
     },
   );

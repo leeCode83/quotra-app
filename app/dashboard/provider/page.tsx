@@ -40,7 +40,7 @@ import { apiClient } from "@/lib/api-client";
 const DEFAULT_MODEL_MAP: Record<string, string> = {
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-20241022",
-  gemini: "gemini-2.0-flash",
+  google: "gemini-2.0-flash",
 };
 
 const emptyListingForm = {
@@ -66,7 +66,7 @@ export default function ProviderDashboardPage() {
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  const { claim } = useProviderClaim();
+  const { claim, isClaiming, claimStatus, error: claimError } = useProviderClaim();
   const { createProviderDelegation } = useDelegation();
 
   const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
@@ -200,7 +200,7 @@ export default function ProviderDashboardPage() {
             <SelectContent>
               <SelectItem value="openai">OpenAI</SelectItem>
               <SelectItem value="anthropic">Anthropic</SelectItem>
-              <SelectItem value="gemini">Gemini</SelectItem>
+              <SelectItem value="google">Google</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -453,7 +453,7 @@ export default function ProviderDashboardPage() {
                   ) : (
                     <NumberFlow
                       value={pendingAmount}
-                      format={{ style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }}
+                      format={{ style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 }}
                       className="text-2xl lg:text-3xl font-bold text-primary"
                       trend={pendingAmount > 0 ? 1 : 0}
                     />
@@ -474,7 +474,7 @@ export default function ProviderDashboardPage() {
                   ) : (
                     <NumberFlow
                       value={totalEarned}
-                      format={{ style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }}
+                      format={{ style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 }}
                       className="text-2xl lg:text-3xl font-bold"
                     />
                   )}
@@ -530,23 +530,37 @@ export default function ProviderDashboardPage() {
                     <p className="text-sm font-medium">Pending Withdrawal</p>
                     <p className="text-xs text-muted-foreground">
                       {pendingAmount > 0
-                        ? `${Number(pendingAmount).toFixed(2)} USDC available to withdraw`
+                        ? `${Number(pendingAmount).toFixed(4)} USDC available to withdraw`
                         : "No pending earnings to withdraw"}
                     </p>
                   </div>
                 </div>
-                <Button
-                  disabled={pendingAmount <= 0}
-                  onClick={async () => {
-                    await claim();
-                    queryClient.invalidateQueries({ queryKey: ["provider-dashboard"] });
-                  }}
-                  size="sm"
-                  className="shrink-0"
-                >
-                  <ArrowRightLeft className="h-4 w-4 mr-1.5" />
-                  Withdraw
-                </Button>
+                <div className="flex items-center gap-2">
+                  {claimStatus === "success" && (
+                    <span className="text-xs text-success font-medium">Withdrawn!</span>
+                  )}
+                  {claimError && (
+                    <span className="text-xs text-destructive font-medium max-w-[200px] truncate">
+                      {claimError}
+                    </span>
+                  )}
+                  <Button
+                    disabled={pendingAmount <= 0 || isClaiming}
+                    onClick={async () => {
+                      await claim();
+                      queryClient.invalidateQueries({ queryKey: ["provider-dashboard"] });
+                    }}
+                    size="sm"
+                    className="shrink-0"
+                  >
+                    {isClaiming ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <ArrowRightLeft className="h-4 w-4 mr-1.5" />
+                    )}
+                    {isClaiming ? "Withdrawing..." : "Withdraw"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 

@@ -2,6 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { createRouteClient, unauthorized } from "@/lib/route-client";
 import { executeMethod } from "@/lib/oneshot";
 
+export async function GET(request: NextRequest) {
+  try {
+    const { supabase, walletAddress } = await createRouteClient(request);
+    if (!walletAddress) return unauthorized();
+
+    const { data: provider } = await supabase
+      .from("providers")
+      .select("id")
+      .ilike("wallet_address", walletAddress)
+      .single();
+
+    if (!provider) {
+      return NextResponse.json({ claims: [] });
+    }
+
+    const { data: claims } = await supabase
+      .from("claim_history")
+      .select("*")
+      .eq("provider_id", provider.id)
+      .order("created_at", { ascending: false });
+
+    const formatted = (claims ?? []).map((c) => ({
+      id: c.id,
+      provider_id: c.provider_id,
+      amount_usdc: parseFloat(c.amount_usdc ?? "0"),
+      tx_hash: c.tx_hash,
+      status: c.status === "completed" ? "claimed" : c.status,
+      created_at: c.created_at,
+    }));
+
+    return NextResponse.json({ claims: formatted });
+  } catch {
+    return NextResponse.json({ claims: [] });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { supabase, walletAddress } = await createRouteClient(request);

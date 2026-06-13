@@ -61,7 +61,7 @@ async function fetchTotalEarnings(walletAddress: string): Promise<number> {
   const { data: transactions } = await supabase
     .from("transactions")
     .select("amount_usdc")
-    .eq("status", "confirmed")
+    .eq("status", "completed")
     .in("listing_id", listingIds);
 
   if (!transactions) return 0;
