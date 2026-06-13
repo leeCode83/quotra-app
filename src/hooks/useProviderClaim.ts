@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import { useQuery } from "@tanstack/react-query";
-import { createClient } from "@/lib/supabase-client";
 import type { ClaimHistory } from "@/types";
 import { apiClient } from "@/lib/api-client";
 
@@ -39,45 +37,8 @@ async function fetchClaimHistory(): Promise<ClaimHistory[]> {
   }
 }
 
-async function fetchTotalEarnings(walletAddress: string): Promise<number> {
-  const supabase = createClient();
-
-  const { data: provider } = await supabase
-    .from("providers")
-    .select("id")
-    .ilike("wallet_address", walletAddress)
-    .maybeSingle();
-
-  if (!provider) return 0;
-
-  const { data: listings } = await supabase
-    .from("listings")
-    .select("id")
-    .eq("provider_id", provider.id);
-
-  if (!listings || listings.length === 0) return 0;
-
-  const listingIds = listings.map((l) => l.id);
-  const { data: transactions } = await supabase
-    .from("transactions")
-    .select("amount_usdc")
-    .eq("status", "completed")
-    .in("listing_id", listingIds);
-
-  if (!transactions) return 0;
-
-  const totalUsdc = transactions.reduce((sum, t) => sum + Number(t.amount_usdc), 0);
-  return totalUsdc;
-}
-
 export function useProviderClaim(): UseProviderClaimReturn {
   const { address, isConnected } = useAccount();
-
-  const { data: totalEarnings = 0 } = useQuery({
-    queryKey: ["totalEarnings", address],
-    queryFn: () => fetchTotalEarnings(address!),
-    enabled: !!address,
-  });
 
   const [claimableAmount, setClaimableAmount] = useState(0);
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>("idle");
@@ -104,36 +65,19 @@ export function useProviderClaim(): UseProviderClaimReturn {
       }
 
       const providerData = await providerResponse.json();
-      const providerId = providerData.provider?.id;
+      const provider = providerData.provider;
 
-      if (!providerId) {
+      if (!provider?.id) {
         setClaimableAmount(0);
         setClaimStatus("idle");
         return;
       }
 
-      // Fetch listings for this provider
-      const listingsResponse = await fetch("/api/listings");
-      const listingsData = await listingsResponse.json();
-      const providerListings = (listingsData.listings ?? []).filter(
-        (l: { provider_wallet: string | null }) =>
-          l.provider_wallet?.toLowerCase() === address.toLowerCase()
-      );
-      const listingIds = providerListings.map((l: { id: string }) => l.id);
+      const history = await fetchClaimHistory();
+      setClaimHistory(history);
 
-      if (listingIds.length > 0) {
-        const history = await fetchClaimHistory();
-        setClaimHistory(history);
-
-        const totalClaimed = history
-          .filter((c) => c.status === "claimed")
-          .reduce((sum, c) => sum + c.amount_usdc, 0);
-
-        const claimable = Math.max(0, Number(totalEarnings) * 0.9 - totalClaimed);
-        setClaimableAmount(Number(claimable.toFixed(6)));
-      } else {
-        setClaimableAmount(0);
-      }
+      const pending = parseFloat(provider.pending_earnings_usdc || "0");
+      setClaimableAmount(Number(pending.toFixed(6)));
 
       setClaimStatus("idle");
     } catch (err) {
@@ -141,7 +85,7 @@ export function useProviderClaim(): UseProviderClaimReturn {
       setError(message);
       setClaimStatus("error");
     }
-  }, [address, totalEarnings]);
+  }, [address]);
 
   const claim = useCallback(async () => {
     if (!isConnected || !address) {

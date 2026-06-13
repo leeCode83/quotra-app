@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRouteClient, unauthorized } from "@/lib/route-client";
 import { executeMethod } from "@/lib/oneshot";
+import crypto from "crypto";
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,6 +39,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const { supabase, walletAddress } = await createRouteClient(request);
@@ -45,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     const { data: provider, error: providerError } = await supabase
       .from("providers")
-      .select("id, wallet_address")
+      .select("id, wallet_address, pending_earnings_usdc, total_earned_usdc")
       .ilike("wallet_address", walletAddress)
       .single();
 
@@ -115,11 +118,22 @@ export async function POST(request: NextRequest) {
 
     let result: { tx_hash: string; status: string };
     try {
+      const validBefore = Math.floor(Date.now() / 1000 + 3600).toString();
+      const nonce = "0x" + crypto.randomBytes(32).toString("hex");
+
       result = await executeMethod(usdcMethodId, {
+        from: process.env.NEXT_PUBLIC_PAY_TO_ADDRESS!,
         to: provider.wallet_address,
         value: amountInUSDC.toString(),
+        validAfter: "0",
+        validBefore,
+        nonce,
+        v: "27",
+        r: "0x" + "0".repeat(64),
+        s: "0x" + "0".repeat(64),
       });
     } catch (txErr) {
+      console.error("[claim] executeMethod failed:", txErr);
       return NextResponse.json(
         { error: "USDC transfer failed", details: txErr instanceof Error ? txErr.message : "Unknown error" },
         { status: 502 }
@@ -140,6 +154,18 @@ export async function POST(request: NextRequest) {
         { error: "Failed to record claim", details: insertError.message },
         { status: 500 }
       );
+    }
+
+    const { error: updateError } = await supabase
+      .from("providers")
+      .update({
+        pending_earnings_usdc: (parseFloat(provider.pending_earnings_usdc || "0") - claimable).toFixed(6),
+        total_earned_usdc: (parseFloat(provider.total_earned_usdc || "0") + claimable).toFixed(6),
+      })
+      .eq("id", provider.id);
+
+    if (updateError) {
+      console.error("[claim] Failed to update provider earnings:", updateError);
     }
 
     return NextResponse.json({

@@ -15,7 +15,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getProviderForModel } from "./models";
 
 // Default max output tokens if not specified by consumer or listing
-const DEFAULT_MAX_OUTPUT_TOKENS = 1500;
+const DEFAULT_MAX_OUTPUT_TOKENS = 5000;
 
 export class AIProviderError extends Error {
   constructor(

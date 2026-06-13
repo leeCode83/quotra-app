@@ -102,7 +102,7 @@ export async function executeMethod(
 
   const walletId = process.env.ONE_SHOT_API_TREASURY_WALLET_ID;
 
-  const body: Record<string, unknown> = { args };
+  const body: Record<string, unknown> = { params: args };
 
   if (walletId) {
     body.wallet_id = walletId;
