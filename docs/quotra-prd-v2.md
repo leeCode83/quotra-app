@@ -1,9 +1,9 @@
 # Quotra — Product Requirements Document (PRD)
-> Version: 2.0.0 | Last Updated: May 2026 | Status: Active Development
+> Version: 2.2.0 | Last Updated: June 2026 | Status: Active Development
 > 
 > **Changelog v2.0:** Fixed payment atomicity contradiction, added escrow treasury model, added request hard limits to prevent per-call pricing exploit, replaced per-call on-chain split with provider manual claim, clarified ERC-7710 vs Supabase responsibility boundary, clarified ERC-7715 role as session auth only, added consumer_permissions to gateway validation, added replay attack protection, fixed race condition with pre-call reservation model, added revoke delegation flow, clarified Vercel runtime separation, updated wording (ETH-free not gasless, OpenAI-inspired not OpenAI-compatible).
 > 
-> **Changelog v2.1:** **JWT REMOVED** — Consumer auth simplified to pure x402 + ERC-7715. No more JWT generation, verification, or middleware. `withAuth`, custom `withX402`, and `chain.ts` deleted. `@x402/next` SDK handles payment intercept + verification natively. Consumer flow: connect wallet → 1x ERC-7710 grant → `x402Fetch()` handles everything. All custom middleware replaced by `paymentProxy` from `@x402/next`. No manual header extraction, no HS256 signing, no consumer_permissions lookup in gateway path. `src/proxy.ts` rewritten with `@x402/next`. `chat/route.ts` rewritten with native `withX402` from `@x402/next`. ~800 lines of custom auth/middleware deleted.
+> **Changelog v2.1:** Auth layer restructured — JWT retained for API route authentication (wallet sign-in → nonce → signature → JWT). Custom `withAuth`/`chain.ts` middleware deleted and replaced by `createRouteClient()` utility. `@x402/next` SDK handles payment intercept + verification. Provider and consumer permissions use ERC-7710/ERC-7715/ERC-7702 via `@metamask/smart-accounts-kit`. ~800 lines of custom auth/middleware cleaned up.
 
 > **Implementation Status (May 2026):**
 > - ✅ 9.7 Claim minimum threshold — added `BELOW_MINIMUM_CLAIM` check at $0.001 to `app/api/escrow/claim/route.ts`
@@ -97,7 +97,7 @@ No existing platform enables:
 ### Product Goals (Post-Hackathon)
 - 100 active providers listing quota within 3 months
 - $1,000 monthly USDC volume through platform
-- Sub-500ms gateway overhead (excluding Venice AI latency)
+- Sub-500ms gateway overhead (excluding AI Provider latency)
 
 ---
 
@@ -138,7 +138,7 @@ OpenRouter is a centralized reseller — they buy API access wholesale and resel
 1. **P2P revenue** — 90% goes to individual provider wallet, not platform
 2. **On-chain authorization** — ERC-7710 delegation is auditable, revocable
 3. **ETH-free** — USDC from any wallet, gas costs covered via 1Shot
-4. **Permissionless listing** — any Venice AI subscriber can become a provider instantly
+4. **Permissionless listing** — any AI Provider subscriber can become a provider instantly
 
 ---
 
@@ -180,9 +180,9 @@ OpenRouter is a centralized reseller — they buy API access wholesale and resel
 | ID | Story | Priority |
 |----|-------|----------|
 | P1 | As a provider, I want to connect my MetaMask Smart Account so I can register on Quotra | Must Have |
-| P2 | As a provider, I want to input my Venice AI API key securely so it is never exposed to anyone | Must Have |
+| P2 | As a provider, I want to input my AI Provider API key securely so it is never exposed to anyone | Must Have |
 | P3 | As a provider, I want to set price per call, max calls, max input chars, max completion tokens, and expiry | Must Have |
-| P4 | As a provider, I want to list multiple Venice AI keys for different models independently | Must Have |
+| P4 | As a provider, I want to list multiple AI Provider keys for different models independently | Must Have |
 | P5 | As a provider, I want my delegation signed without needing ETH for gas | Must Have |
 | P6 | As a provider, I want to see my pending and claimed earnings | Should Have |
 | P7 | As a provider, I want to revoke a listing at any time to stop new consumers from using it | Should Have |
@@ -202,39 +202,34 @@ OpenRouter is a centralized reseller — they buy API access wholesale and resel
 
 ---
 
-## 8. Auth Layer Architecture ✅ (Simplified v2.1)
+## 8. Auth Layer Architecture
 
 Quotra has 3 auth layers. Each layer has a distinct, non-overlapping responsibility.
 
 | Layer | Technology | Responsibility | When Used |
 |-------|-----------|---------------|-----------|
 | **Identity** | Wallet address | Who you are | Connect, all authenticated actions |
-| **Session Auth** | ERC-7715 | Consumer granted access to a specific listing | Once per listing per consumer |
-| **Payment** | x402 USDC | Pay + authenticate the API call | Every API gateway request |
+| **Session** | JWT (HS256, 24h expiry) | Authenticated session after wallet sign-in | All API routes (providers, escrow, consumer) |
+| **Payment** | x402 USDC (ERC-7710) | Pay + authenticate every API call | POST /api/v1/[listingId]/chat |
 
-### JWT Removed (v2.1)
-Previously, JWT acted as a cache of ERC-7715 approval to avoid wallet signing per call. This added ~800 lines of custom middleware (HS256 signing, Bearer extraction, replay checks, permission lookups). **All removed in v2.1.**
-
-The `@x402/next` SDK handles payment intercept, verification, and proof validation natively. Consumer auth is now:
-- Connect wallet once (MetaMask)
-- Grant ERC-7715 session permission once per listing
-- Every API call uses `x402Fetch()` which auto-handles the 402 → pay → retry flow
-
-No Bearer token, no JWT, no manual header extraction.
-
-### Auth Layer Flow
-```
-ONETIME (per listing):
-  Consumer → Connect wallet → ERC-7715 grant → Permission stored in Supabase
-
-PER-CALL:
-  Consumer → x402Fetch() → 402 intercept → wallet pays USDC → retry with proof → Venice AI call
-```
+### Wallet Sign-In Flow
+1. User connects MetaMask wallet → gets address
+2. Frontend calls `POST /api/auth/nonce` with wallet address → receives signable message
+3. User signs message in MetaMask (EIP-4361 style)
+4. Frontend calls `POST /api/auth/login` with address + signature → receives JWT (24h expiry)
+5. JWT stored in memory, sent as `Authorization: Bearer <jwt>` on all subsequent requests
+6. Server validates JWT via `createRouteClient()` — extracts wallet address, gates API access
 
 ### What Each Layer Does NOT Do
-- ERC-7715 does NOT handle payment — that is x402
-- ERC-7715 does NOT enforce quota — that is Supabase
+- JWT does NOT handle payment — that is x402
+- ERC-7715 does NOT replace JWT — it is for session permissions (consumer grant to use a listing)
 - x402 does NOT authenticate identity — wallet address from payment proof does
+
+### ERC-7715 Supplementary Role
+In addition to JWT, ERC-7715 execution permissions are used for:
+- **Provider listing creation**: `erc20-token-periodic` permission for 1Shot Relayer fee allowance (1 USDC/day, 90 days)
+- **Consumer session auth**: `native-token-allowance` (0 value, 7 day expiry) to create ephemeral session key for x402 payment flow
+- These are stored in `consumer_permissions` table alongside JWT-based wallet identity
 
 ---
 
@@ -337,7 +332,7 @@ Step 1: x402 Payment Intercept (handled by @x402/next withX402 wrapper)
   - withX402 intercepts: no X-PAYMENT header → returns 402 + payment requirements
   - Consumer wallet pays USDC to QUOTRA_TREASURY via 1Shot Relayer
   - x402Fetch() auto-retries with payment proof
-  - withX402 verifies proof via Coinbase x402 Facilitator (HTTP)
+  - withX402 verifies proof via MetaMask x402 Facilitator (HTTP)
   - withX402 prevents replay (unique tx_hash insert)
   - withX402 inserts transaction row (status = 'pending')
   → Fail: 402 PAYMENT_PROOF_INVALID / PAYMENT_ALREADY_USED
@@ -451,9 +446,9 @@ Step 6b: AI Provider FAILURE
 
 | Category | Requirement |
 |----------|-------------|
-| **Performance** | Gateway overhead ≤ 500ms (excluding x402 verify + Venice AI latency) |
+| **Performance** | Gateway overhead ≤ 500ms (excluding x402 verify + AI Provider latency) |
 | **Availability** | Vercel deployment — 99.9% uptime SLA |
-| **Security** | Venice AI keys: never logged, never stored plaintext, never returned in any response |
+| **Security** | AI Provider keys: never logged, never stored plaintext, never returned in any response |
 | **Scalability** | Stateless gateway — horizontally scalable on Vercel serverless |
 | **Format** | OpenAI-inspired request/response format (partial compatibility) |
 | **Network** | Base Sepolia Testnet (chainId: 84532) |
@@ -464,7 +459,7 @@ Step 6b: AI Provider FAILURE
 ```
 Frontend pages     → Edge Runtime (fast, global CDN)
 /api/marketplace   → Edge Runtime (read-only DB query)
-/api/v1/[id]/chat  → Node.js Runtime (x402 verify, AES decrypt, Venice AI call)
+/api/v1/[id]/chat  → Node.js Runtime (x402 verify, AES decrypt, AI Provider call)
 /api/provider/*    → Node.js Runtime (AES encrypt, delegation signing)
 ```
 > **Why this matters:** x402 facilitator HTTP calls, AES-256-GCM crypto, and Supabase writes with transactions require Node.js runtime. Placing these on Edge Runtime will cause silent failures or timeout errors.
@@ -512,8 +507,8 @@ Frontend pages     → Edge Runtime (fast, global CDN)
 │  │  MetaMask Smart Accounts Kit  ←→  ERC-7710 delegation signing  │  │
 │  │  MetaMask Smart Accounts Kit  ←→  ERC-7715 session permission  │  │
 │  │  1Shot API Relayer            ←→  ETH-free tx submission        │  │
-│  │  Coinbase x402 Facilitator    ←→  Payment verify/settle         │  │
-│  │  Venice AI API                ←→  LLM inference (text)         │  │
+│  │  MetaMask x402 Facilitator    ←→  Payment verify/settle         │  │
+│  │  AI Provider API                ←→  LLM inference (text)         │  │
 │  │  Base Sepolia Testnet         ←→  USDC settlement, delegation  │  │
 │  │  QUOTRA_TREASURY_ADDRESS      ←→  Payment escrow               │  │
 │  └────────────────────────────────────────────────────────────────┘  │
@@ -525,7 +520,7 @@ Frontend pages     → Edge Runtime (fast, global CDN)
 Provider (browser)
   → fill form
   → POST /api/provider/register
-  → server: AES-256-GCM encrypt Venice AI key
+  → server: AES-256-GCM encrypt AI Provider key
   → server: build ERC-7710 delegation object
   → server: return delegation for provider to sign (EIP-712)
   → provider: signs delegation in MetaMask
@@ -541,10 +536,10 @@ Consumer (app/code)
   → gateway (withX402): intercepts → returns 402 + payment requirements
   → consumer wallet: pay USDC to QUOTRA_TREASURY via 1Shot
   → x402Fetch(): auto-retries with X-PAYMENT header
-  → gateway (withX402): verifies payment via Coinbase x402 Facilitator
+  → gateway (withX402): verifies payment via MetaMask x402 Facilitator
   → gateway (withX402): prevents replay (unique tx_hash insert)
   → gateway: check listing → validate request limits → reserve quota
-  → gateway: decrypt Venice AI key → forward request → get response
+  → gateway: decrypt AI Provider key → forward request → get response
   → gateway: update transaction (completed) + provider pending earnings
   → consumer: receives LLM response (200 OK)
 ```
@@ -555,22 +550,22 @@ Consumer (app/code)
 
 | Technology | Role | Notes |
 |-----------|------|-------|
-| **Next.js 14** (App Router) | Frontend + API Gateway | Single repo, TypeScript, Vercel deployment ✅ |
+| **Next.js 16** (App Router) | Frontend + API Gateway | Single repo, TypeScript, Vercel deployment ✅ |
 | **TypeScript** | All codebase | Strict mode ✅ |
-| **Tailwind CSS** | Styling | Utility-first ✅ |
-| **shadcn/ui** | UI Components | Accessible, composable ✅ |
-| **MetaMask Smart Accounts Kit** (`@metamask/delegation-toolkit`) | ERC-7710 delegation + ERC-7715 permission | Core hackathon requirement |
-| **Viem** | Contract reads/writes, EIP-712 signing, chain interaction | TypeScript-native ✅ |
-| **Wagmi** | React hooks for wallet state | Built on Viem ✅ |
-| **ERC-7710** | On-chain delegation (authorization layer) | Provider signs once; gateway redeems |
-| **ERC-7715** | Consumer session permission grant | One-time per listing per consumer |
+| **Tailwind CSS v4** | Styling | Utility-first ✅ |
+| **shadcn/ui + Radix UI** | UI Components | Accessible, composable ✅ |
+| **@metamask/smart-accounts-kit** (`^1.6.0`) | ERC-7702 smart accounts + ERC-7710 delegation + ERC-7715 permission | Replaces deprecated `@metamask/delegation-toolkit` ✅ |
+| **Viem** (`^2.51.2`) | Contract reads/writes, EIP-712 signing, chain interaction | TypeScript-native ✅ |
+| **Wagmi** (`^3.6.16`) | React hooks for wallet state | Built on Viem ✅ |
+| **ERC-7710** | On-chain delegation (authorization layer) | Treasury signs delegation for 1Shot relayer claims |
+| **ERC-7715** | Consumer + provider permission grants | One-time per listing per user |
+| **ERC-7702** | EOA-to-smart-account upgrade | Stateless7702 implementation via smart-accounts-kit |
 | **x402 Protocol** (`@x402/next`, `@x402/core`) | HTTP-native per-call USDC payment | Intercept in Next.js API Route via `withX402` wrapper and `HTTPFacilitatorClient` ✅ |
-| **1Shot API** | ETH-free tx relay | Provider delegation + consumer payments + provider claim ✅ |
-| **OpenAI / Anthropic / Gemini APIs** | LLM model providers | Text only ✅ |
+| **1Shot Permissionless Relayer** | ETH-free tx relay via JSON-RPC | Provider claims via `relayer_send7710Transaction` ✅ |
 | **Supabase** | PostgreSQL database | RLS enabled, all quota tracking ✅ |
-| **Vercel** | Deployment | Edge + Node.js runtime separation ✅ |
+| **Vercel** | Deployment | Node.js runtime for API routes ✅ |
 | **Base Sepolia** | Blockchain network | chainId: 84532 ✅ |
-| **USDC** | Payment token | Base Sepolia USDC ✅ |
+| **USDC (Base Sepolia)** | Payment token | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` ✅ |
 
 ---
 
@@ -660,8 +655,8 @@ CREATE TABLE transactions (
   provider_amount_usdc  NUMERIC(18, 8) NOT NULL,  -- 90% — credited to provider pending
   platform_amount_usdc  NUMERIC(18, 8) NOT NULL,  -- 10% — stays in treasury
   status                TEXT NOT NULL DEFAULT 'pending', -- pending | completed | refund_pending | refunded
-  prompt_tokens         INTEGER,                  -- from Venice AI response
-  completion_tokens     INTEGER,                  -- from Venice AI response
+  prompt_tokens         INTEGER,                  -- from AI Provider response
+  completion_tokens     INTEGER,                  -- from AI Provider response
   created_at            TIMESTAMPTZ DEFAULT now(),
   completed_at          TIMESTAMPTZ
 );
@@ -674,21 +669,9 @@ CREATE TABLE claim_history (
   provider_id     UUID NOT NULL REFERENCES providers(id),
   amount_usdc     NUMERIC(18, 8) NOT NULL,
   tx_hash         TEXT,                   -- on-chain USDC transfer tx hash
+  task_id         TEXT,                   -- 1Shot relayer task ID (from relayer_send7710Transaction)
   status          TEXT NOT NULL DEFAULT 'pending', -- pending | completed | failed
   created_at      TIMESTAMPTZ DEFAULT now()
-);
-```
-
-### Table: `playground_trials`
-```sql
-CREATE TABLE playground_trials (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  wallet_address  TEXT NOT NULL,
-  listing_id      UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
-  calls_count     INTEGER NOT NULL DEFAULT 0,
-  created_at      TIMESTAMPTZ DEFAULT now(),
-  updated_at      TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(wallet_address, listing_id)
 );
 ```
 
@@ -729,7 +712,7 @@ CREATE INDEX idx_playground_trials_wallet_listing ON playground_trials(wallet_ad
 
 ### Critical SQL: Atomic Quota Reservation
 ```sql
--- Reserve a call slot before Venice AI call (prevents race condition)
+-- Reserve a call slot before AI Provider call (prevents race condition)
 -- Returns empty if no calls remaining
 UPDATE listings
 SET remaining_calls = remaining_calls - 1
@@ -739,7 +722,7 @@ WHERE delegation_id = $1
   AND expires_at > now()
 RETURNING id, remaining_calls;
 
--- Rollback if Venice AI fails
+-- Rollback if AI Provider fails
 UPDATE listings
 SET remaining_calls = remaining_calls + 1
 WHERE delegation_id = $1;
@@ -749,9 +732,10 @@ WHERE delegation_id = $1;
 
 ## 14. API Specification
 
-### 14.1 Provider Registration
+### 14.1 Provider Registration & Listing Creation
 ```
-POST /api/provider/register
+POST /api/providers             (register provider wallet)
+POST /api/providers/listings    (create listing)
 Content-Type: application/json
 
 Request:
@@ -773,6 +757,7 @@ Response 201:
 {
   "listingId": "uuid",
   "delegationId": "string",
+  "taskId": "string",            -- 1Shot relayer task ID for delegation submission
   "endpoint": "https://quotra.app/api/v1/{delegationId}/chat",
   "expiresAt": "2026-07-01T00:00:00Z"
 }
@@ -784,7 +769,7 @@ Errors:
 
 ### 14.2 Marketplace Listings
 ```
-GET /api/marketplace?model=&maxPrice=&sort=
+GET /api/listings?model=&maxPrice=&sort=
 
 Query params:
   model     (optional) exact model name filter
@@ -810,7 +795,8 @@ Response 200:
 
 ### 14.3 Consumer Permission Request
 ```
-POST /api/consumer/permission
+POST /api/permissions           (grant permission)
+POST /api/permissions/[listingId] (check permission)
 Content-Type: application/json
 
 Request:
@@ -837,7 +823,7 @@ Errors:
 
 ### 14.4 LLM API Gateway (Core Endpoint) ✅ (Simplified v2.1)
 ```
-POST /api/v1/[delegationId]/chat
+POST /api/v1/[listingId]/chat
 Content-Type: application/json
 
 // No Authorization header. JWT removed in v2.1.
@@ -913,7 +899,7 @@ Error responses:
 
 ### 14.5 Provider Dashboard
 ```
-GET /api/provider/dashboard
+GET /api/providers/dashboard
 Authorization: Bearer <wallet_signature>
 
 Response 200:
@@ -949,15 +935,15 @@ Response 200:
 
 ### 14.6 Provider Claim Earnings ✅
 ```
-POST /api/provider/claim
+POST /api/escrow/claim
 Authorization: Bearer <wallet_signature>
 
 Response 200:
 {
   "claimId": "uuid",
   "amountUsdc": 4.50,
-  "txHash": "0x...",
-  "status": "completed"
+  "taskId": "...",              -- 1Shot relayer task ID (tx_hash set later by webhook)
+  "status": "submitted"         -- pending webhook confirmation from 1Shot
 }
 
 Errors:
@@ -969,7 +955,8 @@ Errors:
 
 ### 14.7 Provider Revoke Listing
 ```
-POST /api/provider/listing/[listingId]/revoke
+POST /api/escrow/revoke           (revoke via escrow)
+DELETE /api/listings/[id]          (soft-delete via status='revoked')
 Authorization: Bearer <wallet_signature>
 
 Response 200:
@@ -986,7 +973,7 @@ Errors:
 
 ### 14.8 Update Listing (PATCH) ✅
 ```
-PATCH /api/listings/[id]
+PATCH /api/providers/listings/[listingId]
 Authorization: Bearer <wallet_signature>
 Content-Type: application/json
 
@@ -1039,6 +1026,61 @@ Errors:
   404: { "error": "Listing not found" }
 ```
 
+### 14.10 Claim History
+```
+GET /api/escrow/claim
+Authorization: Bearer <wallet_signature>
+
+Query params:
+  providerId  (optional) filter by provider
+  status      (optional) filter by status: pending | completed | failed
+
+Response 200:
+{
+  "claims": [
+    {
+      "id": "uuid",
+      "providerId": "uuid",
+      "amountUsdc": 4.50,
+      "taskId": "...",
+      "txHash": "0x...",             -- null until webhook confirms on-chain settlement
+      "status": "submitted",         -- submitted | completed | failed
+      "createdAt": "2026-06-01T00:00:00Z"
+    }
+  ]
+}
+
+Errors:
+  401: { "error": "UNAUTHORIZED" }
+```
+
+### 14.11 Relayer Webhook
+```
+POST /api/webhooks/relayer
+Content-Type: application/json
+
+Receives status updates from 1Shot Relayer for submitted tasks.
+Updates claim_history and transaction records with on-chain tx hashes.
+
+Request:
+{
+  "taskId": "string",               -- matches the task_id from claim/transaction
+  "status": "completed | failed",
+  "txHash": "0x...",                -- on-chain transaction hash (present when completed)
+  "error": "string"                 -- error detail (present when failed)
+}
+
+On receive:
+  - Look up record by task_id
+  - Update tx_hash if provided
+  - Update status to match webhook status
+  - No response body expected — 200 OK acknowledges receipt
+
+Errors:
+  400: { "error": "INVALID_PAYLOAD" }
+  404: { "error": "TASK_NOT_FOUND" }
+```
+
 ---
 
 ## 15. Blockchain & Smart Contract Spec
@@ -1052,12 +1094,12 @@ Errors:
 - **USDC (Base Sepolia):** `0x036CbD53842c5426634e7929541eC2318f3dCF7e` ✅
 
 ### MetaMask Smart Accounts Kit Usage
-- Use `@metamask/delegation-toolkit` — do NOT deploy custom ERC-7710 contracts ✅
+- Use `@metamask/smart-accounts-kit` — do NOT deploy custom ERC-7710 contracts ✅
 - Use existing Delegation Framework contracts deployed on Base Sepolia by MetaMask
 - `toMetaMaskSmartAccount()` creates Smart Account for both provider and consumer
 
 ```typescript
-import { Implementation, toMetaMaskSmartAccount } from '@metamask/delegation-toolkit'
+import { Implementation, toMetaMaskSmartAccount } from '@metamask/smart-accounts-kit'
 import { createPublicClient, http } from 'viem'
 import { baseSepolia } from 'viem/chains'
 
@@ -1066,19 +1108,19 @@ const publicClient = createPublicClient({
   transport: http()
 })
 
+// Stateless7702 — no deployParams needed, uses EIP-7702 authorization
 const smartAccount = await toMetaMaskSmartAccount({
   client: publicClient,
-  implementation: Implementation.Hybrid,
-  deployParams: [signerAddress, [], [], []],
-  deploySalt: '0x',
-  signer: { account: signerAccount }
+  implementation: Implementation.Stateless7702,
+  address: treasuryAddress,
+  signer: { account: treasuryAccount }
 })
 ```
 
 ### ERC-7710 Delegation Structure (via smart-accounts-kit) ✅
 ```typescript
 import { toMetaMaskSmartAccount } from '@metamask/smart-accounts-kit'
-import { createDelegation } from '@metamask/delegation-toolkit'
+import { createDelegation } from '@metamask/smart-accounts-kit'
 import { baseSepolia } from 'viem/chains'
 
 // The delegation direction matches PRD spec: provider → QUOTRA_SERVER_ACCOUNT
@@ -1170,14 +1212,14 @@ Provider claims:
 ```
 
 ### Why Escrow Treasury (not direct split per call)
-1. **Atomicity:** Payment to treasury is settled by x402 facilitator. Venice AI call happens after. If Venice AI fails, refund comes from treasury — no partial state.
+1. **Atomicity:** Payment to treasury is settled by x402 facilitator. AI Provider call happens after. If AI Provider fails, refund comes from treasury — no partial state.
 2. **No per-call on-chain tx:** Eliminates latency and gas cost of splitting on-chain per request.
-3. **Refund capability:** Treasury can refund consumer for failed Venice AI calls without requiring provider to return funds.
+3. **Refund capability:** Treasury can refund consumer for failed AI Provider calls without requiring provider to return funds.
 4. **Simplicity:** One treasury address, one settle target for x402.
 
-### Refund Flow (Venice AI failure after payment)
+### Refund Flow (AI Provider failure after payment)
 ```
-1. Venice AI returns error (5xx, timeout, or invalid key)
+1. AI Provider returns error (5xx, timeout, or invalid key)
 2. Gateway: update transaction.status = 'refund_pending'
 3. Gateway: rollback quota reservation (remaining_calls += 1)
 4. Gateway: do NOT credit provider pending_earnings
@@ -1218,8 +1260,8 @@ Decrypt flow (server-side only, in Node.js API Route):
   2. Load ENCRYPTION_KEY from process.env
   3. createDecipheriv('aes-256-gcm', key, iv)
   4. decipher.setAuthTag(auth_tag)
-  5. Decrypt → raw Venice AI key string
-  6. Use immediately in Venice AI Authorization header
+  5. Decrypt → raw AI Provider key string
+  6. Use immediately in AI Provider Authorization header
   7. Minimize decrypted key lifetime — do not assign to outer scope variables
   8. Key is never: logged, returned in response, stored in DB, or sent to client
 ```
@@ -1261,7 +1303,7 @@ Flow:
   1. Extract tx_hash from verified x402 payment proof
   2. INSERT INTO transactions (payment_tx_hash, status='pending', ...)
   3. If INSERT throws unique_violation → 402 PAYMENT_ALREADY_USED
-  4. If INSERT succeeds → proceed to quota reservation + Venice AI call
+  4. If INSERT succeeds → proceed to quota reservation + AI Provider call
 
 This guarantees one payment proof = one API call. No reuse possible.
 ```
@@ -1280,12 +1322,12 @@ This guarantees one payment proof = one API call. No reuse possible.
 | `walletAddress` | valid EVM address, checksum validated |
 | `temperature` | float, 0.0–2.0 |
 
-### Venice AI Key Protection — Absolute Rules
-- **NEVER** log Venice AI key at any log level (info, debug, error)
-- **NEVER** return Venice AI key in any API response or error message
-- **NEVER** store Venice AI key in plaintext (DB, file, environment variable)
-- **NEVER** expose Venice AI key in frontend bundle, client-side code, or browser devtools
-- **NEVER** pass Venice AI key through Redis, message queue, or any persistence layer
+### AI Provider Key Protection — Absolute Rules
+- **NEVER** log AI Provider key at any log level (info, debug, error)
+- **NEVER** return AI Provider key in any API response or error message
+- **NEVER** store AI Provider key in plaintext (DB, file, environment variable)
+- **NEVER** expose AI Provider key in frontend bundle, client-side code, or browser devtools
+- **NEVER** pass AI Provider key through Redis, message queue, or any persistence layer
 - Encryption happens in the same API Route that receives the key — no transport in plaintext
 
 ### Rate Limiting
@@ -1315,7 +1357,7 @@ Consumer pays: $0.001 USDC
 | 100,000 | $0.001 | $10.00 |
 
 ### Provider Economics Example
-Rina (Venice AI Pro+, $68/month, 7,500 credits):
+Rina (AI Provider Pro+, $68/month, 7,500 credits):
 - Lists 5,000 credits as quota on Quotra at $0.001/call
 - If fully consumed: 5,000 × $0.0009 = **$4.50 USDC earned**
 - Net cost of subscription effectively reduced: $68 - $4.50 = $63.50
@@ -1358,23 +1400,22 @@ Rina (Venice AI Pro+, $68/month, 7,500 credits):
 | Scenario | Detection | Response |
 |---------|-----------|----------|
 | No payment header | No X-PAYMENT on second request | 402 Payment Required (normal x402 flow) |
-| Payment proof invalid | Coinbase facilitator verify returns isValid=false | 402 `PAYMENT_PROOF_INVALID` |
+| Payment proof invalid | MetaMask x402 Facilitator verify returns isValid=false | 402 `PAYMENT_PROOF_INVALID` |
 | Payment timeout | No payment within 60s | 402 `PAYMENT_TIMEOUT` |
 | Replay attack | Duplicate tx_hash insert fails | 402 `PAYMENT_ALREADY_USED` |
 | Wrong payment amount | Proof amount < required | 402 `PAYMENT_AMOUNT_MISMATCH` |
 | Wrong payTo address | Proof payTo ≠ treasury | 402 `PAYMENT_WRONG_RECIPIENT` |
 
-### Venice AI Errors (all trigger quota rollback + refund_pending)
+### AI Provider Errors (all trigger quota rollback + refund_pending)
 | Scenario | Detection | Response |
 |---------|-----------|----------|
-| Venice AI key invalid | 401 from Venice | 502 `VENICE_KEY_INVALID` + mark listing status='error' |
-| Venice AI rate limited | 429 from Venice | 503 `VENICE_RATE_LIMITED` — retry once after 1s |
-| Venice AI timeout | No response in 30s | 504 `VENICE_TIMEOUT` |
-| Venice AI server error | 5xx from Venice | 502 `VENICE_AI_ERROR` |
+| AI Provider key invalid | 401 from AI Provider | 502 `AI_PROVIDER_KEY_INVALID` + mark listing status='error' |
+| AI Provider rate limited | 429 from AI Provider | 503 `AI_PROVIDER_RATE_LIMITED` — retry once after 1s |
+| AI Provider server error | 5xx from AI Provider | 502 `AI_PROVIDER_ERROR` |
 
-### Atomicity — Venice AI Failure After Payment
+### Atomicity — AI Provider Failure After Payment
 ```
-When Venice AI fails AFTER payment has been verified:
+When AI Provider fails AFTER payment has been verified:
   1. transaction.status = 'refund_pending'          // flag for refund
   2. listings.remaining_calls += 1                  // rollback quota reservation
   3. providers.pending_earnings NOT credited         // provider does not earn
@@ -1406,7 +1447,7 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 | Max calls set to 0 | Form validation reject: minimum 10 |
 | Expiry set less than 7 days | Form validation reject: minimum 7 days |
 | ERC-7710 delegation submit fails | 500 `DELEGATION_SUBMIT_FAILED` — key not stored |
-| Invalid Venice AI key format | 400 `INVALID_KEY` — basic format validation before storage |
+| Invalid AI Provider key format | 400 `INVALID_KEY` — basic format validation before storage |
 
 ### Provider Claim Edge Cases
 | Scenario | Handling |
@@ -1477,26 +1518,27 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 | DAO governance for fee | Post product-market-fit |
 | Provider key update without relisting | Provider creates new listing instead |
 | Automated refund processing | Manual admin endpoint for hackathon |
-| Listing health check / Venice key pre-validation | Manual revoke if key invalid |
+| Listing health check / AI Provider key pre-validation | Manual revoke if key invalid |
 
 ---
 
 ## 22. Submission Checklist
 
 ### Technical Requirements
-- [ ] MetaMask Smart Accounts Kit integrated (core — ERC-7710 + ERC-7715)
+- [ ] MetaMask Smart Accounts Kit integrated (core — ERC-7710 + ERC-7715 + ERC-7702)
 - [ ] ERC-7710 delegation signing in provider registration flow
 - [ ] ERC-7715 session permission in consumer permission flow
 - [ ] Viem used for all contract interaction
 - [ ] x402 payment flow working end-to-end with @x402/next SDK
-- [ ] Coinbase x402 Facilitator used for payment verification
-- [ ] 1Shot Relayer integrated (provider + consumer ETH-free)
-- [ ] Venice AI API integrated as model backend
+- [ ] MetaMask x402 Facilitator used for payment verification
+- [ ] 1Shot Permissionless Relayer integrated for ETH-free provider claims
+- [ ] Ed25519 webhook verification for relayer status updates
+- [ ] OpenAI / Anthropic / Google AI provider integrated
 - [ ] Base Sepolia Testnet live deployment
 - [ ] Supabase schema deployed with all 6 tables
 - [ ] UNIQUE constraint on `transactions.payment_tx_hash` (replay protection)
 - [ ] Atomic quota reservation SQL implemented
-- [ ] AES-256-GCM encryption for Venice AI keys
+- [ ] AES-256-GCM encryption for AI Provider keys
 - [ ] Escrow treasury model working (payments to treasury, provider claim)
 - [ ] Node.js runtime on gateway API routes (not Edge)
 - [ ] JWT removed — consumer auth = x402 + ERC-7715, no Bearer token needed
@@ -1504,7 +1546,7 @@ No row locks needed — PostgreSQL UPDATE with conditional WHERE is atomic.
 
 ### Demo Script (End-to-End)
 1. Connect MetaMask Smart Account as Provider
-2. Register Venice AI key → set price, limits, expiry → sign ERC-7710 delegation
+2. Register AI Provider key → set price, limits, expiry → sign ERC-7710 delegation
 3. Listing appears on marketplace
 4. Connect different MetaMask Smart Account as Consumer
 5. Browse marketplace → select listing
