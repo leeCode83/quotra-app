@@ -65,6 +65,7 @@ export interface ClaimHistory {
   provider_id: string;
   amount_usdc: number;
   tx_hash: string | null;
+  task_id?: string;
   status: ClaimStatus;
   created_at: string;
   updated_at?: string;

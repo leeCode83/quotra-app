@@ -36,9 +36,11 @@ export function WalletButton() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const hasAttemptedAutoLogin = useRef(false);
 
   useEffect(() => {
-    if (isConnected && address && !isAuthenticated && !isLoggingIn) {
+    if (isConnected && address && !isAuthenticated && !isLoggingIn && !hasAttemptedAutoLogin.current) {
+      hasAttemptedAutoLogin.current = true;
       login();
     }
   }, [isConnected, address, isAuthenticated, isLoggingIn, login]);
@@ -47,6 +49,7 @@ export function WalletButton() {
     wagmiDisconnect();
     logout();
     setIsDropdownOpen(false);
+    hasAttemptedAutoLogin.current = false;
   };
 
   // Close dropdown when clicking outside

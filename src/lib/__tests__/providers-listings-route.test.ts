@@ -29,10 +29,6 @@ vi.mock("@/lib/encryption", () => ({
   }),
 }));
 
-vi.mock("@/lib/oneshot", () => ({
-  executeAsDelegator: vi.fn().mockResolvedValue(true),
-}));
-
 describe("API /providers/listings", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useAccount, usePublicClient } from "wagmi"
-import { http, createWalletClient, custom, type Hex, type WalletClient } from "viem"
+import { http, createWalletClient, custom, type WalletClient } from "viem"
 import { baseSepolia } from "viem/chains"
 import { createBundlerClient, type BundlerClient } from "viem/account-abstraction"
 import {
@@ -51,15 +51,10 @@ export function useSmartAccount(): UseSmartAccountReturn {
 
     let cancelled = false
 
-    const deploySalt = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")}` as Hex
-
     toMetaMaskSmartAccount({
       client: publicClient,
-      implementation: Implementation.Hybrid,
-      deployParams: [address, [], [], []],
-      deploySalt,
+      implementation: Implementation.Stateless7702,
+      address: address,
     })
       .then((account) => {
         if (!cancelled) {

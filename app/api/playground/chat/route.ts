@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
         apiKey: decryptedKey,
         chat: gatewayBody.chat,
         systemPrompt: gatewayBody.systemPrompt,
-        maxOutputTokens: gatewayBody.maxOutputTokens,
+        maxOutputTokens: gatewayBody.maxOutputTokens ?? listing.max_completion_tokens,
       });
     } catch (error) {
       await rollbackQuotaSlot(supabase, listing.id);

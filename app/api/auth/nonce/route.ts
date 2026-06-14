@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateNonce } from "@/lib/auth";
 
+export async function GET() {
+  return NextResponse.json({ status: "ok", route: "auth/nonce" });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { address } = await request.json();

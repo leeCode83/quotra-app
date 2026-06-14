@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRouteClient, unauthorized } from "@/lib/route-client";
-import { executeMethod } from "@/lib/oneshot";
-import crypto from "crypto";
+import { claimViaPermissionlessRelayer } from "@/lib/oneshot/relayer-claim";
 
 export async function GET(request: NextRequest) {
   try {
@@ -105,35 +104,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const usdcMethodId = process.env.ONE_SHOT_API_USDC_CONTRACT_METHOD_ID;
-    if (!usdcMethodId) {
-      return NextResponse.json(
-        { error: "USDC transfer method not configured" },
-        { status: 500 }
-      );
-    }
+    const amountInUSDC = BigInt(Math.floor(claimable * 10 ** 6));
+    const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/relayer`;
 
-    const usdcDecimals = 6;
-    const amountInUSDC = BigInt(Math.floor(claimable * 10 ** usdcDecimals));
-
-    let result: { tx_hash: string; status: string };
+    let taskId: string;
     try {
-      const validBefore = Math.floor(Date.now() / 1000 + 3600).toString();
-      const nonce = "0x" + crypto.randomBytes(32).toString("hex");
-
-      result = await executeMethod(usdcMethodId, {
-        from: process.env.NEXT_PUBLIC_PAY_TO_ADDRESS!,
-        to: provider.wallet_address,
-        value: amountInUSDC.toString(),
-        validAfter: "0",
-        validBefore,
-        nonce,
-        v: "27",
-        r: "0x" + "0".repeat(64),
-        s: "0x" + "0".repeat(64),
-      });
+      const result = await claimViaPermissionlessRelayer(
+        provider.wallet_address as `0x${string}`,
+        amountInUSDC,
+        webhookUrl,
+      );
+      taskId = result.taskId;
     } catch (txErr) {
-      console.error("[claim] executeMethod failed:", txErr);
+      console.error("[claim] Permissionless relayer claim failed:", txErr);
       return NextResponse.json(
         { error: "USDC transfer failed", details: txErr instanceof Error ? txErr.message : "Unknown error" },
         { status: 502 }
@@ -145,7 +128,7 @@ export async function POST(request: NextRequest) {
       .insert({
         provider_id: provider.id,
         amount_usdc: String(claimable),
-        tx_hash: result.tx_hash,
+        task_id: taskId,
         status: "pending",
       });
 
@@ -170,8 +153,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       claimable_amount: claimable,
-      tx_hash: result.tx_hash,
-      status: result.status,
+      task_id: taskId,
+      status: "submitted",
     });
   } catch (err) {
     return NextResponse.json(
