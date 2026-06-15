@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import NumberFlow from "@number-flow/react";
 import {
@@ -36,11 +36,12 @@ import { TransactionHistory, Transaction } from "@/components/TransactionHistory
 import { useProviderClaim } from "@/hooks/useProviderClaim";
 import { useDelegation } from "@/hooks/useDelegation";
 import { apiClient } from "@/lib/api-client";
+import { createListingSchema } from "@/lib/validators";
 
 const DEFAULT_MODEL_MAP: Record<string, string> = {
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-20241022",
-  google: "gemini-2.0-flash",
+  google: "gemini-2.5-flash",
 };
 
 const emptyListingForm = {
@@ -65,6 +66,7 @@ export default function ProviderDashboardPage() {
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const signingGuardRef = useRef(false);
 
   const { claim, isClaiming, claimStatus, error: claimError } = useProviderClaim();
   const { createProviderDelegation } = useDelegation();
@@ -91,8 +93,36 @@ export default function ProviderDashboardPage() {
   const totalEarned = provider ? (typeof provider.totalEarnedUsdc === "string" ? parseFloat(provider.totalEarnedUsdc) : provider.totalEarnedUsdc) : 0;
 
   const handleCombinedRegistration = useCallback(async () => {
-    setRegistering(true);
+    if (signingGuardRef.current) return;
+    signingGuardRef.current = true;
     setRegisterError(null);
+
+    const validationPayload = {
+      walletAddress: session.address,
+      name: form.name,
+      apiKey: form.apiKey,
+      modelName: form.provider + "/" + form.modelName,
+      pricePerCallUsdc: Number(form.pricePerCallUsdc),
+      maxCalls: form.maxCalls,
+      maxInputChars: form.maxInputChars,
+      maxCompletionTokens: form.maxCompletionTokens,
+      expiryDays: form.expiryDays,
+      delegationId: "pending",
+      permissionsContext: {},
+      delegationManager: "pending",
+    };
+
+    const parseResult = createListingSchema.safeParse(validationPayload);
+    if (!parseResult.success) {
+      const fieldErrors = parseResult.error.flatten().fieldErrors;
+      const firstError = Object.entries(fieldErrors)
+        .map(([field, msgs]) => `${field}: ${msgs?.join(", ")}`)
+        .join("; ");
+      setRegisterError("Validation failed: " + firstError);
+      return;
+    }
+
+    setRegistering(true);
     try {
       const configRes = await fetch("/api/providers/relayer-config");
       const configData = await configRes.json();
@@ -143,6 +173,7 @@ export default function ProviderDashboardPage() {
       setRegisterError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setRegistering(false);
+      signingGuardRef.current = false;
     }
   }, [form, session.address, queryClient, createProviderDelegation]);
 

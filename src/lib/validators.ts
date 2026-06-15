@@ -46,7 +46,7 @@ export const createListingSchema = z.object({
   pricePerCallUsdc: z.number().min(0.0001).max(1.00),
   maxCalls: z.number().int().min(10).max(100000),
   maxInputChars: z.number().int().min(100).max(8000).default(2000),
-  maxCompletionTokens: z.number().int().min(50).max(2000).default(500),
+  maxCompletionTokens: z.number().int().min(500).default(500),
   expiryDays: z.number().int().refine((v) => [7, 14, 30, 90].includes(v), "Expiry must be 7, 14, 30, or 90 days"),
   delegationId: z.string().min(1, "ERC-7715 context is required."),
   permissionsContext: z.union([z.string(), z.record(z.string(), z.unknown())]),

@@ -7,7 +7,7 @@ import { baseSepolia } from "viem/chains";
 import { erc7715ProviderActions } from "@metamask/smart-accounts-kit/actions";
 
 export interface UseDelegationReturn {
-  createProviderDelegation: (targetAddress: string) => Promise<{ delegationId: string; permissionsContext: Record<string, unknown>; delegationManager: string; error?: never } | { error: string } | undefined>;
+  createProviderDelegation: (targetAddress: string) => Promise<{ delegationId: string; permissionsContext: Record<string, unknown>; delegationManager: string; error?: never } | { error: string; code?: number } | undefined>;
   permissionsContext: Record<string, unknown> | null;
   isLoading: boolean;
   error: string | null;
@@ -111,9 +111,13 @@ export function useDelegation(): UseDelegationReturn {
         setPermissionsContext(result.permissionsContext);
         return result;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Delegation request failed";
+        const msg = err instanceof Error ? err.message : "Delegation request failed";
+        const code = (err as Record<string, unknown>)?.code;
+        const message = code === -32002
+          ? "A MetaMask signature request is already pending. Please complete or cancel it in your wallet before trying again."
+          : msg;
         setError(message);
-        return { error: message };
+        return { error: message, code: code as number | undefined };
       } finally {
         setIsLoading(false);
       }

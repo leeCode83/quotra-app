@@ -6,6 +6,7 @@ function createRatelimit() {
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
   if (!url || !token) {
+    console.warn("[rate-limit] Redis not configured — rate limiting disabled");
     return null;
   }
 

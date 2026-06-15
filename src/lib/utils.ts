@@ -10,15 +10,6 @@ export function formatAddress(address: string, chars = 4): string {
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
 }
 
-export function formatEth(value: bigint | undefined, decimals = 4): string {
-  if (!value) return "0";
-  const divisor = 10n ** 18n;
-  const whole = value / divisor;
-  const fraction = value % divisor;
-  const padded = fraction.toString().padStart(18, "0").slice(0, decimals);
-  return `${whole}.${padded}`;
-}
-
 export function formatDate(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString("en-US", {
