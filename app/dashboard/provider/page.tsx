@@ -545,7 +545,7 @@ export default function ProviderDashboardPage() {
                     </span>
                   )}
                   <Button
-                    disabled={pendingAmount <= 0 || isClaiming}
+                    disabled={pendingAmount <= 0 || isClaiming || claimStatus === "error"}
                     onClick={async () => {
                       await claim();
                       queryClient.invalidateQueries({ queryKey: ["provider-dashboard"] });

@@ -18,23 +18,19 @@ export interface UseProviderClaimReturn {
 }
 
 async function fetchClaimHistory(): Promise<ClaimHistory[]> {
-  try {
-    const response = await apiClient("/api/escrow/claim", {
-      method: "GET",
-    });
+  const response = await apiClient("/api/escrow/claim", {
+    method: "GET",
+  });
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        return [];
-      }
-      throw new Error("Failed to fetch claim history");
+  if (!response.ok) {
+    if (response.status === 404) {
+      return [];
     }
-
-    const data = await response.json();
-    return data.claims ?? [];
-  } catch {
-    return [];
+    throw new Error(`Failed to fetch claim history (${response.status})`);
   }
+
+  const data = await response.json();
+  return data.claims ?? [];
 }
 
 export function useProviderClaim(): UseProviderClaimReturn {
