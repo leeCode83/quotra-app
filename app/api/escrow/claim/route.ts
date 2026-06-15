@@ -33,8 +33,12 @@ export async function GET(request: NextRequest) {
     }));
 
     return NextResponse.json({ claims: formatted });
-  } catch {
-    return NextResponse.json({ claims: [] });
+  } catch (err) {
+    console.error("[escrow/claim] GET Error:", err);
+    return NextResponse.json(
+      { error: "Failed to fetch claims", details: err instanceof Error ? err.message : "Unknown error" },
+      { status: 500 }
+    );
   }
 }
 

@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateNonce } from "@/lib/auth";
 
 export async function GET() {
-  return NextResponse.json({ status: "ok", route: "auth/nonce" });
+  try {
+    return NextResponse.json({ status: "ok", route: "auth/nonce" });
+  } catch (err) {
+    console.error("[auth/nonce] GET Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {

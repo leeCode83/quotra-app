@@ -178,12 +178,13 @@ describe("API /escrow/claim GET", () => {
     });
   });
 
-  it("returns empty claims on error", async () => {
+  it("returns 500 on unexpected error", async () => {
     (createRouteClient as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("DB error"));
 
     const req = new NextRequest("http://localhost/api/escrow/claim", { method: "GET" });
     const res = await GET(req);
+    expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body).toEqual({ claims: [] });
+    expect(body.error).toBe("Failed to fetch claims");
   });
 });
