@@ -326,6 +326,27 @@ quotra-app/
 
 ---
 
+## 🏆 Hackathon Tracks & Code Usage Links
+
+As per the submission guidelines, here is the reference to the codebase usage for the hackathon tracks.
+
+### Smart Accounts Kit Usage
+- **Advanced Permissions**: 
+  - Request: [`src/hooks/usePermissions.ts`](src/hooks/usePermissions.ts)
+  - Redeem: Verified on server side (`app/api/v1/[listingId]/chat/route.ts` / Supabase DB)
+- **Delegations**:
+  - Create: [`src/hooks/useDelegation.ts`](src/hooks/useDelegation.ts)
+  - Redeem: [`src/lib/oneshot/relayer-claim.ts`](src/lib/oneshot/relayer-claim.ts)
+- **Redelegation**: N/A
+- **x402**:
+  - Server: [`src/x402-config.ts`](src/x402-config.ts) and [`app/api/v1/[listingId]/chat/route.ts`](app/api/v1/[listingId]/chat/route.ts)
+  - Client: [`src/hooks/useX402WithDelegation.ts`](src/hooks/useX402WithDelegation.ts)
+
+### 1Shot API Usage
+- **1Shot Permissionless Relayer**: Executed via JSON-RPC in [`src/lib/oneshot/relayer-claim.ts`](src/lib/oneshot/relayer-claim.ts)
+
+---
+
 <div align="center">
   <p>
     <i>Built with 🩵 for a more accessible AI future.</i><br/>

@@ -5,26 +5,24 @@ import { createClient } from "@/lib/supabase-server";
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const { data: listings } = await supabase
+  const { data: listings, error } = await supabase
     .from("listings")
-    .select("id, name, description, model_name, price_per_call_usdc, providers ( wallet_address )")
+    .select("id, name, model_name, price_per_call_usdc, remaining_calls, max_calls")
     .eq("status", "active")
     .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
+    .order("remaining_calls", { ascending: true })
     .limit(3);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const featuredListings = (listings ?? []).map((item: any) => {
-    const wallet = item.providers?.[0]?.wallet_address;
-    return {
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      modelName: item.model_name,
-      pricePerCallUsdc: parseFloat(item.price_per_call_usdc || 0),
-      providerWallet: wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : "Unknown",
-    };
-  });
+  if (error) throw error;
+
+  const featuredListings = listings.map((item) => ({
+    id: item.id,
+    name: item.name,
+    modelName: item.model_name,
+    pricePerCallUsdc: parseFloat(item.price_per_call_usdc || 0),
+    remainingCalls: item.remaining_calls,
+    maxCalls: item.max_calls,
+  }));
 
   return (
     <>

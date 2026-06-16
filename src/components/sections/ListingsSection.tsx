@@ -5,14 +5,15 @@ import { ArrowRight, Cpu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Reveal } from "@/components/animated/Reveal";
+import { CallsBar } from "@/components/CallsBar";
 
 interface Listing {
   id: string;
   name: string;
-  description: string;
   modelName: string;
   pricePerCallUsdc: number;
-  providerWallet: string;
+  remainingCalls: number;
+  maxCalls: number;
 }
 
 interface ListingsSectionProps {
@@ -72,14 +73,14 @@ export function ListingsSection({ listings }: ListingsSectionProps) {
                         {listing.modelName}
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      by {listing.providerWallet}
-                    </p>
                   </CardHeader>
                   <CardContent className="relative">
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {listing.description}
-                    </p>
+                    <div className="space-y-1.5">
+                      <CallsBar used={listing.remainingCalls} total={listing.maxCalls} />
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {listing.remainingCalls} / {listing.maxCalls} calls
+                      </span>
+                    </div>
                     <p className="text-sm font-semibold text-primary mt-3">
                       {listing.pricePerCallUsdc === 0
                         ? "Free"
