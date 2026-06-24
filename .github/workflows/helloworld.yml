@@ -1,19 +1,37 @@
 name: Hello World Workflow
-on: 
+on:
   push:
     branches:
-    - main
-    - dev
+      - main
+      - dev
 
 jobs:
   unit-test:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: "https://dummy.supabase.co"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "1234567890"
+      SUPABASE_SERVICE_ROLE_KEY: "1234567890"
+      SUPABASE_JWT_SECRET: "asdfghjklasdfghjkl"
+      UPSTASH_REDIS_REST_URL: "https://dummy.redis.co"
+      UPSTASH_REDIS_REST_TOKEN: "asdfghjklzxcvbnm"
+      QUOTRA_ENCRYPTION_KEY: "qwertyuioplkjhgfdsazxcvbnm"
+      TREASURY_PRIVATE_KEY: "sdfghjklyturie672"
+      NEXT_PUBLIC_PAY_TO_ADDRESS: "asfghj654dfghj654fghjk"
+      NEXT_PUBLIC_PIMLICO_API_KEY: "235678hgfdfgyjl65e"
+      NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL: "https://dummy.base-sepolia.co"
+      X402_FACILITATOR_URL: "https://dummy.x402.co"
+      NEXT_PUBLIC_USDC_ADDRESS: "fghjkfd45678907tfvbjkfgh"
+      NEXT_PUBLIC_APP_URL: "https://dummy.app.co"
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Install Depedency
         run: npm ci
+
       - name: Build App
+
         run: npm run build
       - name: Run Unit Test
         run: npm run test
