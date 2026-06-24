@@ -1,0 +1,19 @@
+name: Hello World Workflow
+on: 
+  push:
+    branches:
+    - main
+    - dev
+
+jobs:
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Install Depedency
+        run: npm ci
+      - name: Build App
+        run: npm run build
+      - name: Run Unit Test
+        run: npm run test
